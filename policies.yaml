@@ -1,0 +1,88 @@
+# Thalamus 策略配置
+# Hermes 模型调度中枢 — 瀑布式调度 + 大脑分区
+
+router:
+  port: 9880
+  host: "127.0.0.1"
+
+# 瀑布式调度层
+layers:
+  - name: "规则引擎"
+    type: "regex"
+    priority: 1
+    description: "关键词正则匹配，0延迟，预期命中率80%"
+  - name: "轻量分类"
+    type: "classifier"
+    priority: 2
+    model: "mimo-v2-omni"
+    provider: "xiaomi"
+    description: "MiMo Omni 做语义分类，¥0.02/M"
+  - name: "默认处理"
+    type: "default"
+    priority: 3
+    model: "deepseek-chat"
+    provider: "deepseek"
+    description: "DeepSeek V4 兜底"
+
+# 路由规则（第1层：规则引擎）
+routes:
+  - pattern: "(代码|编程|写.*程序|修.*bug|重构|部署|deploy|运维|server|服务器|nginx|docker|systemctl|ssh|git|commit|PR|pull.request|config|配置.*文件|yaml|json.*修改|shell|bash|脚本|写.*代码|实现.*功能|修复|报错|error|exception|traceback|日志.*分析|排查|调试|debug|cron|备份|快照)"
+    model: "mimo-v2.5-pro"
+    provider: "xiaomi"
+    endpoint: "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+    key_env: "XIAOMI_API_KEY"
+    description: "代码/部署/运维 → MiMo 2.5 Pro"
+
+  - pattern: "(分析|对比|比较|推理|为什么|原因|根因|深度|论证|评估|策略|方案|设计.*架构|优缺点|权衡|决策)"
+    model: "openrouter/auto"
+    provider: "openrouter"
+    endpoint: "https://openrouter.ai/api/v1/chat/completions"
+    key_env: "OPENROUTER_API_KEY"
+    description: "复杂推理/分析 → OpenRouter Auto"
+
+  - pattern: "(图片|截图|照片|图像|看图|OCR|识别.*图|vision|视觉)"
+    model: "mimo-v2-omni"
+    provider: "xiaomi"
+    endpoint: "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+    key_env: "XIAOMI_API_KEY"
+    description: "视觉/多模态 → MiMo v2 Omni"
+
+# 默认路由
+default_route:
+  model: "deepseek-chat"
+  provider: "deepseek"
+  endpoint: "https://api.deepseek.com/v1/chat/completions"
+  key_env: "DEEPSEEK_API_KEY"
+
+# 策略层
+policies:
+  safe:
+    max_tokens: 4096
+    spend_cap_usd: 2.0
+    allowed_tools: ["web_search", "read_file", "search_files"]
+    require_approval: ["write_file", "terminal"]
+    description: "Cron/自动任务 — 只读+限制费用"
+
+  standard:
+    max_tokens: 16384
+    spend_cap_usd: 10.0
+    allowed_tools: ["all"]
+    require_approval: ["terminal.rm", "terminal.sudo"]
+    description: "日常使用 — 全工具+中等费用"
+
+  yolo:
+    max_tokens: 65536
+    spend_cap_usd: 50.0
+    allowed_tools: ["all"]
+    require_approval: []
+    description: "高风险操作 — 需手动选择"
+
+# 并行配置
+parallel:
+  max_workers: 3
+  timeout: 120
+
+# 审计
+audit:
+  log_file: "/root/.hermes/logs/brain-router.log"
+  track_spend: true
