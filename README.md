@@ -325,6 +325,17 @@ thalamus/
 
 ---
 
+## 🏛️ 生态项目
+
+| 项目 | ★ | 描述 |
+|:----|:---:|:-----|
+| [🧠 Thalamus](https://github.com/sixgodgit/thalamus) | ☆ | 本仓库 — 模型调度中枢 |
+| [⏳ NexSandglass](https://github.com/sixgodgit/NexSandglass-Agent-DedicatedMemory) | ★ | 19 MCP 工具的记忆系统：全文/语义/图谱搜索 |
+| [💤 Hypnos](https://github.com/sixgodgit/hypnos-dream-system) | ★ | 夜间自主认知循环系统 |
+| [📚 Librarian](https://github.com/sixgodgit/skill-ecosystem-librarian) | ★ | 140+ 技能生态管理系统 |
+
+---
+
 ## 📜 许可证
 
 MIT License — 详见 [LICENSE](LICENSE) 文件。
