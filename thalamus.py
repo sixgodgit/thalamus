@@ -18,14 +18,17 @@ Thalamus v3 — OpenAI 兼容透明代理
 import json
 import os
 import re
+import secrets
 import signal
 import ssl
 import sys
 import time
 import uuid
+import hashlib
 import threading
 import traceback
 import urllib.parse
+import urllib.request
 import http.client
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -35,39 +38,113 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 # ══════════════════════════════════════════
 
 LOG_PATH = Path(os.environ.get("THALAMUS_LOG", "/root/.hermes/logs/thalamus.log"))
+ROUTES_PATH = Path(os.environ.get("THALAMUS_ROUTES", "/root/thalamus/routes.json"))
+KEYS_PATH = Path("/root/thalamus/keys.json")
+ADMIN_HTML_PATH = Path("/root/thalamus/admin.html")
+ADMIN_PWD_PATH = Path("/root/thalamus/admin.pwd")
+ADMIN_TOKEN = {}  # {token: expiry}
 
-# 路由规则 — 瀑布式，第一个命中即停止
-ROUTES = [
-    (re.compile(
-        r"(代码|编程|写.*程序|写.*代码|写.*函数|写.*算法|写.*类|写.*模块|实现.*功能|"
-        r"修.*bug|重构|部署|deploy|运维|server|服务器|nginx|docker|"
-        r"systemctl|ssh|git\s|commit|PR|pull.request|config|配置.*文件|yaml|json.*修改|"
-        r"shell|bash|脚本|修复|报错|error|exception|traceback|"
-        r"日志.*分析|排查|调试|debug|cron|备份|快照|kill|杀.*进程|重启.*服务|"
-        r"安装|apt|pip|npm|yum|dnf|编译|make|cmake|gcc|clang|rpm|dpkg|"
-        r"测试|test|unittest|pytest|mock|stub|benchmark)"
-     ), "mimo-v2.5-pro", "xiaomi",
-     "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
-     "XIAOMI_API_KEY", "MiMo 2.5 Pro"),
+# 加载路由配置
+def _load_routes():
+    global ROUTES, DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_ENDPOINT, DEFAULT_KEY_ENV
+    global FALLBACK_MODEL, FALLBACK_PROVIDER, FALLBACK_ENDPOINT, FALLBACK_KEY_ENV
+    global PRECHECK_ENABLED, PRECHECK_MODEL, PRECHECK_PROVIDER, PRECHECK_ENDPOINT, PRECHECK_KEY_ENV
+    global PRECHECK_MAX_TOKENS, PRECHECK_TEMPERATURE
 
-    (re.compile(
-        r"(分析|对比|比较|推理|为什么|原因|根因|深度|论证|评估|策略|方案|"
-        r"设计.*架构|优缺点|权衡|决策|审查|审计|review|评审|代码审查)"
-     ), "openrouter/auto", "openrouter",
-     "https://openrouter.ai/api/v1/chat/completions",
-     "OPENROUTER_API_KEY", "OpenRouter Auto"),
+    try:
+        with open(ROUTES_PATH) as f:
+            cfg = json.load(f)
 
-    (re.compile(r"(图片|截图|照片|图像|看图|OCR|识别.*图|vision|视觉|多媒体)"),
-     "mimo-v2-omni", "xiaomi",
-     "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
-     "XIAOMI_API_KEY", "MiMo v2 Omni"),
-]
+        # 路由规则 — 瀑布式，第一个命中即停止
+        ROUTES = []
+        for r in cfg.get("routes", []):
+            ROUTES.append((
+                re.compile(r["pattern"]),
+                r["model"],
+                r["provider"],
+                r["endpoint"],
+                r["key_env"],
+                r["label"],
+            ))
 
-# 默认路由（也是 fallback）
+        # 默认路由
+        d = cfg.get("default", {})
+        DEFAULT_MODEL = d.get("model", "deepseek-chat")
+        DEFAULT_PROVIDER = d.get("provider", "deepseek")
+        DEFAULT_ENDPOINT = d.get("endpoint", "https://api.deepseek.com/v1/chat/completions")
+        DEFAULT_KEY_ENV = d.get("key_env", "DEEPSEEK_API_KEY")
+
+        # Fallback
+        fb = cfg.get("fallback", {})
+        FALLBACK_MODEL = fb.get("model", "mimo-v2-flash")
+        FALLBACK_PROVIDER = fb.get("provider", "xiaomi")
+        FALLBACK_ENDPOINT = fb.get("endpoint", "https://token-plan-cn.xiaomimimo.com/v1/chat/completions")
+        FALLBACK_KEY_ENV = fb.get("key_env", "XIAOMI_API_KEY")
+
+        # Pre-check
+        pc = cfg.get("precheck", {})
+        PRECHECK_ENABLED = pc.get("enabled", True)
+        PRECHECK_MODEL = pc.get("model", DEFAULT_MODEL)
+        PRECHECK_PROVIDER = pc.get("provider", DEFAULT_PROVIDER)
+        PRECHECK_ENDPOINT = pc.get("endpoint", DEFAULT_ENDPOINT)
+        PRECHECK_KEY_ENV = pc.get("key_env", DEFAULT_KEY_ENV)
+        PRECHECK_MAX_TOKENS = pc.get("max_tokens", 512)
+        PRECHECK_TEMPERATURE = pc.get("temperature", 0.3)
+
+        log(f"Loaded {len(ROUTES)} routes from {ROUTES_PATH}")
+    except Exception as e:
+        log(f"WARNING: failed to load {ROUTES_PATH}: {e}")
+        raise
+
+# 默认值（_load_routes 之前可用）
+ROUTES = []
 DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_ENDPOINT = "https://api.deepseek.com/v1/chat/completions"
 DEFAULT_KEY_ENV = "DEEPSEEK_API_KEY"
+FALLBACK_MODEL = "mimo-v2-flash"
+FALLBACK_PROVIDER = "xiaomi"
+FALLBACK_ENDPOINT = "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+FALLBACK_KEY_ENV = "XIAOMI_API_KEY"
+PRECHECK_ENABLED = True
+PRECHECK_MODEL = DEFAULT_MODEL
+PRECHECK_PROVIDER = DEFAULT_PROVIDER
+PRECHECK_ENDPOINT = DEFAULT_ENDPOINT
+PRECHECK_KEY_ENV = DEFAULT_KEY_ENV
+PRECHECK_MAX_TOKENS = 512
+PRECHECK_TEMPERATURE = 0.3
+
+# 密钥存储
+KEYS = {}
+
+def _load_keys():
+    global KEYS
+    try:
+        if KEYS_PATH.exists():
+            with open(KEYS_PATH) as f:
+                KEYS = json.load(f)
+            log(f"Loaded {len(KEYS)} API keys from {KEYS_PATH}")
+        else:
+            KEYS = {}
+    except Exception as e:
+        log(f"WARNING: failed to load keys: {e}")
+        KEYS = {}
+
+def _resolve_key(key_env: str) -> str:
+    if key_env and key_env.startswith("keys:"):
+        name = key_env[5:]
+        return KEYS.get(name, "")
+    if key_env:
+        return os.environ.get(key_env, "")
+    return ""
+
+def _get_admin_password() -> str:
+    try:
+        if ADMIN_PWD_PATH.exists():
+            return ADMIN_PWD_PATH.read_text().strip()
+    except Exception:
+        pass
+    return ""
 
 # ══════════════════════════════════════════
 # 全局状态（线程安全）
@@ -227,6 +304,159 @@ def classify(messages: list) -> tuple | None:
 
 
 # ══════════════════════════════════════════
+# Pre-check：先查能不能不写代码（Ponytail 理念）
+# ══════════════════════════════════════════
+
+PRECHECK_SYSTEM_PROMPT = """你是 Preflight Checker，负责在 AI 编码 Agent 接活前拦住不必要的代码生成。
+
+收到用户需求后，按以下顺序判断：
+
+1. 标准库（stdlib）能搞定且不需要写自定义逻辑吗？ → Python/Node.js/Go 等语言自带的功能
+2. 框架/平台内置了吗且不需要额外配置？ → React/Vue/Django 等框架自带功能
+3. 有成熟的第三方包吗且不需要写包装代码？ → npm/pip 现成包
+
+核心原则：只有用户的需求能通过**一行 import/require + 已有函数调用**解决时才拦截。
+如果用户的需求需要**写完整的业务逻辑、多步处理、状态管理、定时任务、并发控制、自定义算法**等，不要拦截！
+
+⚠️ 注意区分：
+- "解析日期" → YES|stdlib （datetime.strptime 一行搞定）
+- "写一个自动更新的token轮换服务" → NO （需要定时逻辑+状态管理+异常处理，不是一行 import 能搞定的）
+- "用 Python 发 HTTP 请求" → YES|stdlib （urllib.request 一行）
+- "写一个完整的 REST API 服务" → NO （需要路由/日志/错误处理等多步）
+
+如果以上任一成立，回答格式：
+  YES|{stdlib|framework|package}:{方案描述}
+  例如：YES|stdlib: Python datetime.strptime 可以直接解析日期字符串
+
+如果不成立，回答：
+  NO|需求涉及自定义逻辑，需要写新代码
+
+不要写代码！不要推荐要写代码的方案！只判断有没有现成的。"""
+
+
+def precheck(messages: list) -> dict | None:
+    """在路由分类之前执行 pre-check。
+
+    发一条轻量查询给预检模型（默认 DeepSeek Chat），
+    如果判定可以用现成方案解决，返回建议方案；
+    否则返回 None，走正常路由。
+    """
+    if not PRECHECK_ENABLED:
+        return None
+
+    # 取最后一条用户消息
+    text = ""
+    for m in reversed(messages):
+        content = m.get("content", "")
+        if isinstance(content, str) and m.get("role") == "user":
+            text = content.strip()
+            break
+
+    if not text:
+        return None
+
+    # 预检 prompt 很轻：只发用户消息 + system prompt，不传全上下文
+    pre_body = {
+        "model": PRECHECK_MODEL,
+        "messages": [
+            {"role": "system", "content": PRECHECK_SYSTEM_PROMPT},
+            {"role": "user", "content": text},
+        ],
+        "max_tokens": PRECHECK_MAX_TOKENS,
+        "temperature": PRECHECK_TEMPERATURE,
+        "stream": False,
+    }
+
+    key = os.environ.get(PRECHECK_KEY_ENV, "")
+    if not key:
+        log(f"PRECHECK WARNING: key not set: {PRECHECK_KEY_ENV}")
+        return None
+
+    t0 = time.time()
+    try:
+        data = _make_request(PRECHECK_ENDPOINT, pre_body, key, stream=False)
+        latency = time.time() - t0
+        choice = data.get("choices", [{}])[0]
+        reply = choice.get("message", {}).get("content", "").strip()
+        log(f"PRECHECK: {latency:.2f}s | {reply[:80]}")
+
+        # 解析结果
+        if reply.startswith("YES|"):
+            parts = reply.split("|", 2)
+            if len(parts) >= 3:
+                category = parts[1]  # stdlib / framework / package
+                suggestion = parts[2]
+            elif len(parts) == 2 and ":" in parts[1]:
+                # 兼容格式：YES|stdlib: 描述（DeepSeek 爱用冒号）
+                sub = parts[1].split(":", 1)
+                category = sub[0].strip()
+                suggestion = sub[1].strip()
+            else:
+                category = "stdlib"
+                suggestion = parts[1] if len(parts) > 1 else reply
+            log(f"PRECHECK: intercepted → {category}: {suggestion}")
+            # 查询 Sandglass：用户以前做过类似需求吗？
+            sandglass_hint = ""
+            try:
+                import sys as _sys
+                # sandglass_sqlite 依赖 sandglass_paths._NB，后者读 NEXSANDBASE_HOME
+                import os as _os
+                _os.environ.setdefault("NEXSANDBASE_HOME", "/root/.hermes/nexsandglass")
+                _sand_paths = ["/root/nexsandglass", "/root/.hermes/NexSandglass"]
+                for _p in _sand_paths:
+                    if _p not in _sys.path:
+                        _sys.path.insert(0, _p)
+                from sandglass_sqlite import search as _sg_search
+                # 取用户消息前几个关键词搜索——先精确后宽松
+                _stopwords = {"用", "在", "的", "了", "吗", "吧", "呢", "啊", "什么", "怎么", "如何",
+                              "哪个", "哪些", "可以", "能", "要", "是", "有", "给", "把", "被",
+                              "from", "to", "in", "on", "at", "for", "of", "the", "a", "an",
+                              "and", "or", "do", "is", "it", "with", "很", "太", "不", "没", "还",
+                              "说", "话", "对", "那", "这", "我", "你", "他", "她"}
+                import re as _re
+                # 提取英文/数字关键词（技术词汇）
+                _tech = [w.lower() for w in _re.findall(r"[a-zA-Z0-9_]{2,}", text)
+                         if w.lower() not in _stopwords]
+                if _tech:
+                    # OR 搜索：任何技术词命中就算
+                    _kw = " OR ".join(_tech[:3])
+                    _results = _sg_search(_kw, limit=3)
+                else:
+                    # 纯中文查询——取前2个词做 AND 搜索
+                    _words = [w for w in text.split() if len(w) > 1]
+                    _kw = " ".join(_words[:2]) if _words else ""
+                    _results = _sg_search(_kw, limit=3) if _kw else []
+                if _results:
+                    _lines = []
+                    for _rid, _ts, _rtext in _results[:2]:
+                        _short = _rtext.replace("\n", " ").strip()[:100]
+                        _lines.append(f"  [{_ts}] {_short}")
+                    if _lines:
+                        sandglass_hint = "\n📖 **之前类似需求的记录：**\n" + "\n".join(_lines)
+                    log(f"PRECHECK: sandglass hit {len(_results)} for '{_kw}'")
+                else:
+                    log(f"PRECHECK: sandglass no hit for '{_kw}'")
+            except Exception as _e:
+                log(f"PRECHECK: sandglass query failed: {_e}")
+                import traceback as _tb
+                log(f"PRECHECK: sandglass traceback: {_tb.format_exc()}")
+
+            return {
+                "intercepted": True,
+                "category": category,
+                "suggestion": suggestion,
+                "sandglass_hint": sandglass_hint,
+                "latency": round(latency, 2),
+            }
+
+        # NO 或无法解析 → 放行
+        return {"intercepted": False}
+    except Exception as e:
+        log(f"PRECHECK ERROR: {e}")
+        return None  # precheck 失败不阻塞正常流程
+
+
+# ══════════════════════════════════════════
 # 核心处理
 # ══════════════════════════════════════════
 
@@ -241,6 +471,38 @@ def process(body: dict) -> tuple[str, bool, dict]:
     messages = body.get("messages", [])
     is_stream = body.get("stream", False)
 
+    # 0. Pre-check：先查能不能不写代码
+    pc_result = precheck(messages)
+    if pc_result and pc_result.get("intercepted"):
+        log(f"PRECHECK: bypassed routing, task solved without code generation")
+        suggestion = pc_result["suggestion"]
+        # 构造一个直接建议的响应，不走模型路由
+        reply_text = f"✅ **{pc_result['category'].upper()} 方案可用**\n\n{suggestion}"
+        if pc_result.get("sandglass_hint"):
+            reply_text += pc_result["sandglass_hint"]
+        response = {
+            "id": f"thalamus-{uuid.uuid4().hex[:12]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": PRECHECK_MODEL,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": reply_text,
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 0, "completion_tokens": len(reply_text), "total_tokens": 0},
+            "_thalamus": {
+                "routed_to": f"precheck-{pc_result['category']}",
+                "provider": PRECHECK_PROVIDER,
+                "latency_s": pc_result["latency"],
+                "intercepted": True,
+            },
+        }
+        return ("json", False, response)
+
     # 1. 分类
     route = classify(messages)
 
@@ -252,7 +514,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
         provider = DEFAULT_PROVIDER
         label = "DeepSeek (default)"
 
-    key = os.environ.get(key_env, "")
+    key = _resolve_key(key_env)
     if not key:
         log(f"ERROR: API key not set: {key_env}")
         raise RuntimeError(f"API key not set: {key_env}")
@@ -344,8 +606,10 @@ def process(body: dict) -> tuple[str, bool, dict]:
             evolution_learn(label, latency, success=False)
             return _fallback_to_deepseek(body, is_stream)
         else:
-            log(f"CRITICAL: DeepSeek itself failed: {e}")
-            raise
+            # DeepSeek 自身失败 → fallback 到 MiMo Flash
+            log(f"FALLBACK: DeepSeek failed ({e}) → MiMo Flash")
+            evolution_learn("DeepSeek (default)", latency, success=False)
+            return _fallback_to_mimo(body, is_stream)
 
 
 def _fallback_to_deepseek(body: dict, is_stream: bool) -> tuple:
@@ -422,6 +686,81 @@ def _fallback_to_deepseek(body: dict, is_stream: bool) -> tuple:
         raise
 
 
+def _fallback_to_mimo(body: dict, is_stream: bool) -> tuple:
+    """DeepSeek 失败时 fallback 到 MiMo Flash"""
+    with _spend_lock:
+        _spend["fallbacks"] += 1
+        fb_num = _spend["fallbacks"]
+
+    key = os.environ.get(FALLBACK_KEY_ENV, "")
+    if not key:
+        log(f"ERROR: MiMo fallback key not set: {FALLBACK_KEY_ENV}")
+        raise RuntimeError(f"MiMo fallback key not set: {FALLBACK_KEY_ENV}")
+
+    fwd_body = dict(body)
+    fwd_body["model"] = FALLBACK_MODEL
+    fwd_body["stream"] = is_stream
+
+    t0 = time.time()
+    domain = urllib.parse.urlparse(FALLBACK_ENDPOINT).hostname or ""
+    if not domain:
+        raise RuntimeError(f"Invalid fallback endpoint domain: {FALLBACK_ENDPOINT}")
+    _set_noproxy(domain)
+
+    try:
+        if is_stream:
+            conn, resp = _make_request(FALLBACK_ENDPOINT, fwd_body, key, stream=True)
+            latency = time.time() - t0
+            _record_stats("xiaomi", "MiMo Flash (fallback)", latency, True)
+            log(f"STREAM (fallback #{fb_num}): MiMo Flash | {latency:.2f}s")
+
+            def stream_gen():
+                try:
+                    for chunk in _read_stream_response(conn, resp):
+                        yield chunk
+                except Exception as e:
+                    yield f'data: {{"error": "MiMo fallback stream failed"}}\n\n'.encode()
+                    yield "data: [DONE]\n\n".encode()
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            return ("stream", True, stream_gen())
+        else:
+            data = _make_request(FALLBACK_ENDPOINT, fwd_body, key, stream=False)
+            latency = time.time() - t0
+            _record_stats("xiaomi", "MiMo Flash (fallback)", latency, False)
+
+            choice = data.get("choices", [{}])[0]
+            usage = data.get("usage", {})
+            log(f"CALL (fallback #{fb_num}): MiMo Flash | {latency:.2f}s | "
+                f"tok={usage.get('prompt_tokens',0)}+{usage.get('completion_tokens',0)}")
+
+            return ("json", False, {
+                "id": data.get("id", f"thalamus-fb-{uuid.uuid4().hex[:8]}"),
+                "object": "chat.completion",
+                "created": data.get("created", int(time.time())),
+                "model": data.get("model", FALLBACK_MODEL),
+                "choices": [{
+                    "index": 0,
+                    "message": choice.get("message", {}),
+                    "finish_reason": choice.get("finish_reason", "stop"),
+                }],
+                "usage": usage,
+                "_thalamus": {
+                    "routed_to": "MiMo Flash (fallback #{})".format(fb_num),
+                    "provider": "xiaomi",
+                    "latency_s": round(latency, 2),
+                },
+            })
+    except Exception as e:
+        latency = time.time() - t0
+        _record_error("xiaomi", "MiMo Flash (fallback)", str(e), latency)
+        log(f"CRITICAL: MiMo fallback also failed: {e}")
+        raise
+
+
 # ══════════════════════════════════════════
 # 多模型分析（从 multi-model-analysis 合并）
 # ══════════════════════════════════════════
@@ -470,12 +809,12 @@ def multi_analysis(prompt: str, max_tokens: int = 4096) -> dict:
 
             if "xiaomimimo" in cfg.get("model", ""):
                 # 找 MiMo 路由
-                for p, m, prov, ep, ke, _ in ROUTES:
+                for p, m, prov, ep, ke, _l in ROUTES:
                     if "xiaomi" in prov:
                         endpoint, model, key_env, provider = ep, m, ke, prov
                         break
             elif "openrouter" in cfg.get("model", ""):
-                for p, m, prov, ep, ke, _ in ROUTES:
+                for p, m, prov, ep, ke, _l in ROUTES:
                     if "openrouter" in prov:
                         endpoint, model, key_env, provider = ep, m, ke, prov
                         break
@@ -661,12 +1000,15 @@ class ThalamusHandler(BaseHTTPRequestHandler):
         self._send_json(code, {"error": message})
 
     def do_GET(self):
-        if self.path in ("/health", "/health/"):
+        if self.path in ("/", ""):
+            # Root → admin panel
+            self._serve_admin_html()
+        elif self.path in ("/health", "/health/"):
             uptime = int(time.time() - START_TIME)
             self._send_json(200, {
                 "status": "ok",
                 "name": "thalamus",
-                "version": "3.0.0",
+                "version": "4.0.0",
                 "uptime_seconds": uptime,
                 "calls": _spend["calls"],
                 "fallbacks": _spend["fallbacks"],
@@ -702,6 +1044,8 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "patterns": _EVOLUTION_PATTERNS[-10:],
                 "total_decisions": len(_EVOLUTION_LOG),
             })
+        elif self.path.startswith("/admin"):
+            self._handle_admin_get()
         else:
             self._send_json(200, {
                 "name": "thalamus",
@@ -738,6 +1082,8 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self._handle_parallel(body)
         elif self.path in ("/analysis", "/analysis/"):
             self._handle_analysis(body)
+        elif self.path.startswith("/admin"):
+            self._handle_admin_post(body)
         else:
             self._send_error(404, "Not found")
 
@@ -878,6 +1224,242 @@ class ThalamusHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_error(502, str(e))
 
+    # ─── Admin panel handlers ───
+
+    def _check_admin_auth(self) -> bool:
+        now = time.time()
+        # Clean expired tokens
+        expired = [t for t, exp in list(ADMIN_TOKEN.items()) if exp < now]
+        for t in expired:
+            ADMIN_TOKEN.pop(t, None)
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and auth[7:] in ADMIN_TOKEN:
+            return True
+        return False
+
+    def _serve_admin_html(self):
+        try:
+            html = ADMIN_HTML_PATH.read_text(encoding="utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html.encode())))
+            self.end_headers()
+            self.wfile.write(html.encode())
+        except Exception as e:
+            self._send_error(500, f"Failed to load admin page: {e}")
+
+    def _handle_admin_get(self):
+        if self.path in ("/admin/", "/admin"):
+            self._serve_admin_html()
+        elif self.path in ("/admin/api/config", "/admin/api/config/"):
+            if not self._check_admin_auth():
+                self._send_error(401, "Unauthorized")
+                return
+            cfg = json.loads(ROUTES_PATH.read_text())
+            # Add version
+            cfg["version"] = "4.0.0"
+            # Add keys (masked for env vars, full for custom keys)
+            cfg["keys"] = dict(KEYS)
+            # Add env var key names that exist
+            env_keys = {}
+            for env_name in ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "XIAOMI_API_KEY"]:
+                if os.environ.get(env_name):
+                    env_keys[env_name] = "sk-****" + os.environ.get(env_name, "")[-4:]
+            cfg["env_keys"] = env_keys
+            self._send_json(200, cfg)
+        elif self.path in ("/admin/api/stats", "/admin/api/stats/"):
+            if not self._check_admin_auth():
+                self._send_error(401, "Unauthorized")
+                return
+            self._send_json(200, {
+                "uptime_seconds": int(time.time() - START_TIME),
+                "calls": _spend["calls"],
+                "fallbacks": _spend["fallbacks"],
+                "errors": _spend["errors"],
+                "by_provider": dict(_spend["by_provider"]),
+            })
+        elif self.path in ("/admin/api/balances", "/admin/api/balances/"):
+            if not self._check_admin_auth():
+                self._send_error(401, "Unauthorized")
+                return
+            balances = {}
+            # DeepSeek — read key from .env (different from .credentials)
+            try:
+                env_path = Path("/root/.hermes/.env")
+                dk = ""
+                if env_path.exists():
+                    for line in env_path.read_text().splitlines():
+                        if line.startswith("DEEPSEEK_API_KEY") and "=" in line:
+                            dk = line.split("=", 1)[1].strip()
+                            break
+                if dk and dk != "***" and len(dk) > 20:
+                    req = urllib.request.Request("https://api.deepseek.com/user/balance",
+                        headers={"Authorization": f"Bearer {dk}"})
+                    resp = urllib.request.urlopen(req, timeout=10)
+                    data = json.loads(resp.read())
+                    balances["deepseek"] = data
+            except Exception as e:
+                balances["deepseek"] = {"error": str(e)[:100]}
+            # OpenRouter
+            try:
+                ork = os.environ.get("OPENROUTER_API_KEY", "")
+                if ork:
+                    req = urllib.request.Request("https://openrouter.ai/api/v1/auth/key",
+                        headers={"Authorization": f"Bearer {ork}"})
+                    resp = urllib.request.urlopen(req, timeout=10)
+                    data = json.loads(resp.read())
+                    balances["openrouter"] = data.get("data", {})
+            except Exception as e:
+                balances["openrouter"] = {"error": str(e)[:100]}
+            self._send_json(200, balances)
+        elif self.path in ("/admin/api/logs", "/admin/api/logs/"):
+            if not self._check_admin_auth():
+                self._send_error(401, "Unauthorized")
+                return
+            try:
+                lines_count = 100
+                if LOG_PATH.exists():
+                    with open(LOG_PATH) as f:
+                        all_lines = f.readlines()
+                        tail = all_lines[-lines_count:]
+                    self._send_json(200, {"lines": tail, "total": len(all_lines)})
+                else:
+                    self._send_json(200, {"lines": [], "total": 0})
+            except Exception as e:
+                self._send_error(500, str(e))
+        else:
+            self._send_error(404, "Not found")
+
+    def _handle_admin_post(self, body: dict):
+        path = self.path.rstrip("/")
+
+        if path == "/admin/api/login":
+            pwd = body.get("password", "")
+            stored = _get_admin_password()
+            if not stored:
+                self._send_error(500, "No admin password configured")
+                return
+            # Simple timing-safe comparison
+            if secrets.compare_digest(pwd.encode(), stored.encode()):
+                token = secrets.token_urlsafe(32)
+                ADMIN_TOKEN[token] = time.time() + 86400  # 24h expiry
+                self._send_json(200, {"token": token})
+            else:
+                self._send_error(401, "Invalid password")
+            return
+
+        if not self._check_admin_auth():
+            self._send_error(401, "Unauthorized")
+            return
+
+        if path in ("/admin/api/config", "/admin/api/config/"):
+            action = body.get("action", "")
+            try:
+                cfg = json.loads(ROUTES_PATH.read_text())
+                if action == "upsert_route":
+                    route = body.get("route", {})
+                    pattern_raw = route.get("pattern", "")
+                    # Validate regex
+                    try:
+                        re.compile(pattern_raw)
+                    except re.error as e:
+                        self._send_error(400, f"Invalid regex pattern: {e}")
+                        return
+                    entry = {
+                        "label": route.get("label", ""),
+                        "pattern": pattern_raw,
+                        "model": route.get("model", ""),
+                        "provider": route.get("provider", ""),
+                        "endpoint": route.get("endpoint", ""),
+                        "key_env": route.get("key_env", ""),
+                    }
+                    routes = cfg["routes"]
+                    idx = body.get("index")
+                    if idx is not None and 0 <= idx < len(routes):
+                        routes[idx] = entry
+                    else:
+                        routes.append(entry)
+                    cfg["routes"] = routes
+                elif action == "delete_route":
+                    idx = body.get("index", -1)
+                    routes = cfg.get("routes", [])
+                    if 0 <= idx < len(routes):
+                        routes.pop(idx)
+                    cfg["routes"] = routes
+                elif action == "upsert_key":
+                    name = body.get("key_name", "")
+                    value = body.get("key_value", "")
+                    if not name or not value:
+                        self._send_error(400, "Missing key_name or key_value")
+                        return
+                    KEYS[name] = value
+                    with open(KEYS_PATH, "w") as f:
+                        json.dump(KEYS, f, indent=2)
+                    log(f"Admin: saved API key '{name}'")
+                    self._send_json(200, {"status": "ok", "keys": list(KEYS.keys())})
+                    return
+                elif action == "delete_key":
+                    name = body.get("key_name", "")
+                    if name in KEYS:
+                        KEYS.pop(name)
+                        with open(KEYS_PATH, "w") as f:
+                            json.dump(KEYS, f, indent=2)
+                        log(f"Admin: deleted API key '{name}'")
+                    self._send_json(200, {"status": "ok"})
+                    return
+                elif action == "update_defaults":
+                    if "default" in body:
+                        d = body["default"]
+                        cfg["default"] = {
+                            "model": d.get("model", cfg["default"]["model"]),
+                            "provider": d.get("provider", cfg["default"]["provider"]),
+                            "endpoint": d.get("endpoint", cfg["default"]["endpoint"]),
+                            "key_env": d.get("key_env", cfg["default"]["key_env"]),
+                        }
+                    if "fallback" in body:
+                        fb = body["fallback"]
+                        cfg["fallback"] = {
+                            "model": fb.get("model", cfg["fallback"]["model"]),
+                            "provider": fb.get("provider", cfg["fallback"]["provider"]),
+                            "endpoint": fb.get("endpoint", cfg["fallback"]["endpoint"]),
+                            "key_env": fb.get("key_env", cfg["fallback"]["key_env"]),
+                        }
+                    if "precheck" in body:
+                        pc = body["precheck"]
+                        cfg["precheck"] = {
+                            "enabled": pc.get("enabled", cfg["precheck"]["enabled"]),
+                            "model": pc.get("model", cfg["precheck"]["model"]),
+                            "provider": pc.get("provider", cfg["precheck"]["provider"]),
+                            "endpoint": pc.get("endpoint", cfg["precheck"]["endpoint"]),
+                            "key_env": pc.get("key_env", cfg["precheck"]["key_env"]),
+                        }
+                else:
+                    self._send_error(400, f"Unknown action: {action}")
+                    return
+
+                # Write routes.json
+                with open(ROUTES_PATH, "w") as f:
+                    json.dump(cfg, f, indent=2, ensure_ascii=False)
+                log(f"Admin: configuration updated (action={action})")
+                self._send_json(200, {"status": "ok"})
+            except Exception as e:
+                log(f"Admin config error: {e}")
+                self._send_error(500, str(e))
+            return
+
+        if path in ("/admin/api/reload", "/admin/api/reload/"):
+            try:
+                _load_routes()
+                _load_keys()
+                log("Admin: configuration reloaded")
+                self._send_json(200, {"status": "ok", "message": "Configuration reloaded"})
+            except Exception as e:
+                log(f"Admin reload error: {e}")
+                self._send_error(500, str(e))
+            return
+
+        self._send_error(404, "Not found")
+
     def log_message(self, format, *args):
         pass  # 静默内置 HTTP 日志
 
@@ -892,14 +1474,17 @@ def main():
 
     _setup_noproxy()
     _evolution_load()
+    _load_routes()
+    _load_keys()
 
     log("=" * 50)
-    log("Thalamus v3.1.0 — OpenAI-compatible transparent proxy")
+    log("Thalamus v4.0.0 — OpenAI-compatible transparent proxy + Pre-check")
     log(f"Listening: {host}:{port}")
-    log(f"Endpoints: /v1/chat/completions /task /parallel /analysis /evolution /health /stats")
-    log(f"Routes: {len(ROUTES)} regex rules")
-    log(f"Fallback: {DEFAULT_MODEL} ({DEFAULT_PROVIDER})")
-    log(f"Features: streaming SSE, tool_calls pass-through, multi_analysis, evolution, ThreadingHTTPServer")
+    log(f"Endpoints: /v1/chat/completions /task /parallel /analysis /evolution /health /stats /admin")
+    log(f"Routes: {len(ROUTES)} rules (from {ROUTES_PATH})")
+    log(f"Pre-check: {'ON' if PRECHECK_ENABLED else 'OFF'} (model={PRECHECK_MODEL})")
+    log(f"Fallback: {DEFAULT_MODEL} ({DEFAULT_PROVIDER}) → {FALLBACK_MODEL} ({FALLBACK_PROVIDER})")
+    log(f"Features: streaming SSE, tool_calls pass-through, pre-check, multi_analysis, evolution, ThreadingHTTPServer")
     log("=" * 50)
 
     server = ThreadingHTTPServer((host, port), ThalamusHandler)
