@@ -166,6 +166,23 @@ def _resolve_endpoint(key_env: str) -> str:
         return KEYS[key_env].get("endpoint", "")
     return ""
 
+# ─── 模型能力标签 ───
+
+_CAPABILITY_PATTERNS = [
+    ("multi", "vision|image|gemini|pixtral|vl|omni|multimodal"),
+    ("reason", "reasoning|deepseek-r[12]|o[13]|thinking|claude-sonnet|claude-opus|gemini-thinking|gemini-3-pro|gemini-3[.5]|kimi-k2"),
+    ("code", "codex|coder|deepseek-coder|qwen-coder|north"),
+    ("fast", "flash|mini|small|8b|7b|1[.5]b|3b|free|lite|nano"),
+]
+
+def _tag_model(mid: str) -> list:
+    m = mid.lower()
+    tags = []
+    for tag_name, pattern in _CAPABILITY_PATTERNS:
+        if re.search(pattern, m):
+            tags.append(tag_name)
+    return tags
+
 def _get_admin_password() -> str:
     try:
         if ADMIN_PWD_PATH.exists():
@@ -395,7 +412,7 @@ def precheck(messages: list) -> dict | None:
         "stream": False,
     }
 
-    key = os.environ.get(PRECHECK_KEY_ENV, "")
+    key = _resolve_key(PRECHECK_KEY_ENV)
     if not key:
         log(f"PRECHECK WARNING: key not set: {PRECHECK_KEY_ENV}")
         return None
@@ -646,7 +663,7 @@ def _fallback_to_deepseek(body: dict, is_stream: bool) -> tuple:
         _spend["fallbacks"] += 1
         fb_num = _spend["fallbacks"]
 
-    key = os.environ.get(DEFAULT_KEY_ENV, "")
+    key = _resolve_key(DEFAULT_KEY_ENV)
     if not key:
         raise RuntimeError(f"Fallback key not set: {DEFAULT_KEY_ENV}")
 
@@ -720,7 +737,7 @@ def _fallback_to_mimo(body: dict, is_stream: bool) -> tuple:
         _spend["fallbacks"] += 1
         fb_num = _spend["fallbacks"]
 
-    key = os.environ.get(FALLBACK_KEY_ENV, "")
+    key = _resolve_key(FALLBACK_KEY_ENV)
     if not key:
         log(f"ERROR: MiMo fallback key not set: {FALLBACK_KEY_ENV}")
         raise RuntimeError(f"MiMo fallback key not set: {FALLBACK_KEY_ENV}")
@@ -1482,7 +1499,8 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             for m in data.get("data", []):
                 mid = m.get("id", "")
                 if mid:
-                    models.append({"id": mid, "object": m.get("object", "model")})
+                    tags = _tag_model(mid)
+                    models.append({"id": mid, "object": m.get("object", "model"), "tags": tags})
             _spend[cache_key] = now
             self._send_json(200, {"models": models})
         except Exception as e:

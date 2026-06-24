@@ -6,14 +6,15 @@
 <title>Thalamus · 控制台</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0a0c10;--card:#13161b;--border:#1f2329;--text:#e1e4e8;--text2:#6e7681;--accent:#3b82f6;--green:#22c55e;--yellow:#eab308;--red:#ef4444;--radius:10px;--r-sm:6px}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+:root{--bg:#0a0a0a;--glass:rgba(255,255,255,0.04);--glass-border:rgba(255,255,255,0.08);--glass-hover:rgba(255,255,255,0.07);--text:#e4e4e7;--text2:#71717a;--accent:#6366f1;--green:#22c55e;--yellow:#eab308;--red:#ef4444;--radius:12px;--r-sm:8px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;--mono:'SF Mono',SFMono-Regular,Consolas,'JetBrains Mono',monospace}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 20% 30%,rgba(99,102,241,0.06) 0%,transparent 60%),radial-gradient(ellipse at 80% 70%,rgba(168,85,247,0.04) 0%,transparent 60%);pointer-events:none;z-index:0}
 input,select,button{font:inherit;color:inherit}
-.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse at 30% 40%,#0f172a 0%,#0a0c10 70%)}
-.login-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:40px;width:380px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse at 30% 40%,rgba(99,102,241,.06) 0%,#0a0a0a 70%)}
+.login-card{background:var(--glass);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);border:1px solid var(--glass-border);border-radius:16px;padding:40px;width:380px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .login-card h1{font-size:22px;font-weight:600;margin-bottom:6px}
 .login-card p{color:var(--text2);font-size:13px;margin-bottom:24px}
-.login-card input{display:block;width:100%;background:#0d1117;border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 14px;font-size:15px;outline:none;transition:border-color .15s}
+.login-card input{display:block;width:100%;background:#0d1117;border:1px solid var(--glass-border);border-radius:var(--r-sm);padding:10px 14px;font-size:15px;outline:none;transition:border-color .15s}
 .login-card input:focus{border-color:var(--accent)}
 .login-card button{display:block;width:100%;margin-top:12px;background:var(--accent);border:none;border-radius:var(--r-sm);padding:10px;font-size:15px;font-weight:500;color:#fff;cursor:pointer;transition:opacity .15s}
 .login-card button:hover{opacity:.85}
@@ -25,12 +26,12 @@ input,select,button{font:inherit;color:inherit}
 .top-bar h1{font-size:20px;font-weight:600}
 .top-bar h1 span{color:var(--accent)}
 .top-bar .actions{display:flex;gap:8px}
-.top-bar .actions button{background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 14px;font-size:12px;cursor:pointer;transition:all .15s;color:var(--text2)}
-.top-bar .actions button:hover{background:var(--card);color:var(--text);border-color:var(--text2)}
+.top-bar .actions button{background:transparent;border:1px solid var(--glass-border);border-radius:var(--r-sm);padding:6px 14px;font-size:12px;cursor:pointer;transition:all .15s;color:var(--text2)}
+.top-bar .actions button:hover{background:var(--glass);color:var(--text);border-color:var(--text2)}
 .top-bar .actions .logout{color:var(--red);border-color:rgba(239,68,68,.3)}
 .top-bar .actions .logout:hover{background:rgba(239,68,68,.1);border-color:var(--red)}
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.card{background:var(--glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid var(--glass-border);border-radius:var(--radius);padding:16px}
 .card .label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px}
 .card .value{font-size:26px;font-weight:600;letter-spacing:-.5px}
 .card .sub{font-size:11px;color:var(--text2);margin-top:2px}
@@ -38,22 +39,22 @@ input,select,button{font:inherit;color:inherit}
 .card .value.yellow{color:var(--yellow)}
 .card .value.red{color:var(--red)}
 .card .value.blue{color:var(--accent)}
-.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--glass-border);margin-bottom:20px}
 .tab{background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 18px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;margin-bottom:-1px}
 .tab:hover{color:var(--text)}
 .tab.active{color:var(--text);border-bottom-color:var(--accent)}
 .tab-pane{display:none}
 .tab-pane.active{display:block}
-.route-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.route-wrap .top-actions{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)}
+.route-wrap{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);overflow:hidden}
+.route-wrap .top-actions{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--glass-border)}
 .route-wrap .top-actions .left{display:flex;align-items:center;gap:12px}
 .route-wrap .top-actions .left h3{font-size:14px;font-weight:600}
 .route-wrap .top-actions .left .count{font-size:11px;color:var(--text2);background:var(--bg);padding:2px 8px;border-radius:10px}
 .route-wrap .top-actions button{background:var(--accent);border:none;border-radius:var(--r-sm);padding:6px 14px;font-size:12px;color:#fff;cursor:pointer;transition:opacity .15s}
 .route-wrap .top-actions button:hover{opacity:.85}
 table{width:100%;border-collapse:collapse}
-thead th{text-align:left;padding:10px 14px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);white-space:nowrap}
-tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+thead th{text-align:left;padding:10px 14px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--glass-border);background:rgba(255,255,255,.02);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--glass-border);transition:background .1s}
 tbody tr:last-child{border-bottom:none}
 tbody tr:hover{background:rgba(255,255,255,.03)}
 tbody td{padding:10px 14px;font-size:13px;vertical-align:middle}
@@ -63,7 +64,7 @@ tbody td{padding:10px 14px;font-size:13px;vertical-align:middle}
 .tag.vision{background:rgba(168,85,247,.15);color:#a855f7}
 .tag.daily{background:rgba(110,118,129,.2);color:var(--text2)}
 td .mono{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--text2)}
-td .e-btn{background:transparent;border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s;white-space:nowrap}
+td .e-btn{background:transparent;border:1px solid var(--glass-border);border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s;white-space:nowrap}
 td .e-btn:hover{background:var(--bg);color:var(--text);border-color:var(--text2)}
 td .e-btn.danger{color:var(--red);border-color:rgba(239,68,68,.25)}
 td .e-btn.danger:hover{background:rgba(239,68,68,.1);border-color:var(--red)}
@@ -71,11 +72,11 @@ td[contenteditable]{outline:none;cursor:text;border-radius:4px;padding:2px 4px;t
 td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px var(--accent)}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-overlay.show{display:flex}
-.modal{background:var(--card);border:1px solid var(--border);border-radius:14px;width:520px;max-width:92vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
-.modal .m-h{padding:18px 22px;border-bottom:1px solid var(--border);font-size:15px;font-weight:600}
+.modal{background:var(--glass);border:1px solid var(--glass-border);border-radius:14px;width:520px;max-width:92vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal .m-h{padding:18px 22px;border-bottom:1px solid var(--glass-border);font-size:15px;font-weight:600}
 .modal .m-b{padding:18px 22px}
-.modal .m-footer{padding:12px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
-.modal .m-footer button{background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 16px;font-size:12px;cursor:pointer;transition:all .1s}
+.modal .m-footer{padding:12px 22px;border-top:1px solid var(--glass-border);display:flex;justify-content:flex-end;gap:8px}
+.modal .m-footer button{background:transparent;border:1px solid var(--glass-border);border-radius:var(--r-sm);padding:7px 16px;font-size:12px;cursor:pointer;transition:all .1s}
 .modal .m-footer button:hover{background:var(--bg)}
 .modal .m-footer .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .modal .m-footer .btn-primary:hover{opacity:.85}
@@ -84,30 +85,30 @@ td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px va
 .field{margin-bottom:14px}
 .field:last-child{margin-bottom:0}
 .field label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px}
-.field input,.field select,.field textarea{display:block;width:100%;background:#0d1117;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 12px;font-size:13px;outline:none;transition:border-color .15s}
+.field input,.field select,.field textarea{display:block;width:100%;background:#0d1117;border:1px solid var(--glass-border);border-radius:var(--r-sm);padding:8px 12px;font-size:13px;outline:none;transition:border-color .15s}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
 .field .hint{font-size:11px;color:var(--text2);margin-top:3px}
 .field-row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field-row-2 .field{margin-bottom:0}
-.key-section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:20px}
+.key-section{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:18px 20px;margin-bottom:20px}
 .key-section .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .key-section .head h3{font-size:14px;font-weight:600}
 .key-section .head button{background:var(--accent);border:none;border-radius:var(--r-sm);padding:6px 14px;font-size:12px;color:#fff;cursor:pointer;transition:opacity .15s}
 .key-section .head button:hover{opacity:.85}
-.key-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:10px}
+.key-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--glass-border);gap:10px}
 .key-row:last-child{border-bottom:none}
 .key-row .k-main{flex:1;min-width:0}
 .key-row .k-name{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;font-weight:500}
 .key-row .k-ep{font-size:11px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .key-row .k-val{font-size:11px;color:var(--text2);margin-top:1px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace}
 .key-row .k-actions{display:flex;gap:6px;flex-shrink:0}
-.key-row .k-actions button{background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s}
+.key-row .k-actions button{background:transparent;border:1px solid var(--glass-border);border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s}
 .key-row .k-actions button:hover{background:var(--bg)}
 .key-row .k-actions .del{color:var(--red);border-color:rgba(239,68,68,.25)}
 .key-row .k-actions .del:hover{background:rgba(239,68,68,.1);border-color:var(--red)}
 .k-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:500}
 .k-badge.env{background:rgba(110,118,129,.2);color:var(--text2)}
-.cfg-section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:12px}
+.cfg-section{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:18px 20px;margin-bottom:12px}
 .cfg-section h4{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:12px}
 .cfg-section .field-row-2 > *{margin-bottom:0}
 .probe-group{display:flex;gap:6px;align-items:flex-end}
@@ -119,12 +120,12 @@ td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px va
 .probe-models .m{display:inline-block;padding:2px 8px;margin:2px;border-radius:4px;background:rgba(59,130,246,.1);color:var(--text);cursor:pointer;font-size:11px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;transition:background .1s}
 .probe-models .m:hover{background:rgba(59,130,246,.3)}
 .probe-models .m.sel{background:var(--accent);color:#fff}
-.logs-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.logs-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)}
+.logs-wrap{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);overflow:hidden}
+.logs-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--glass-border)}
 .logs-header .left{display:flex;align-items:center;gap:10px}
 .logs-header .left h3{font-size:14px;font-weight:600}
 .logs-header .left .filter-group{display:flex;gap:4px}
-.logs-header .left .filter-group button{background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s}
+.logs-header .left .filter-group button{background:transparent;border:1px solid var(--glass-border);border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s}
 .logs-header .left .filter-group button:hover{border-color:var(--text2)}
 .logs-header .left .filter-group button.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .logs-body{background:#0a0c10;padding:0;max-height:380px;overflow-y:auto;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.7}
@@ -134,10 +135,10 @@ td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px va
 .logs-body .line.fbk{color:var(--yellow)}
 .logs-body .line.route{color:var(--accent)}
 .logs-body .line.ok{color:var(--green)}
-.logs-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--text2)}
+.logs-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-top:1px solid var(--glass-border);font-size:11px;color:var(--text2)}
 .logs-footer .auto-scroll{display:flex;align-items:center;gap:6px}
 .logs-footer .auto-scroll label{font-size:11px;cursor:pointer}
-.toast{position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:13px;z-index:200;box-shadow:0 8px 30px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);transition:all .25s;pointer-events:none}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--glass);border:1px solid var(--glass-border);border-radius:10px;padding:12px 20px;font-size:13px;z-index:200;box-shadow:0 8px 30px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);transition:all .25s;pointer-events:none}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast.ok{border-color:rgba(34,197,94,.4)}
 .toast.err{border-color:rgba(239,68,68,.4)}
@@ -152,6 +153,51 @@ td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px va
 .bal-chip .num{font-weight:600}
 .bal-chip .num.ds{color:var(--green)}
 .bal-chip .num.or{color:var(--accent)}
+/* 调度链可视化 */
+.chain-wrap{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.chain-title{font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text)}
+.chain-flow{display:flex;flex-direction:column;align-items:center;gap:0}
+.chain-node{width:100%;max-width:400px;border-radius:var(--radius);padding:14px 18px;transition:all .15s}
+.chain-start{background:rgba(59,130,246,.08);border:1px dashed rgba(59,130,246,.3);text-align:center;font-size:13px;font-weight:500;color:var(--accent);cursor:default}
+.chain-card{background:var(--bg);border:1px solid var(--glass-border);cursor:pointer}
+.chain-card:hover{border-color:var(--accent);background:rgba(59,130,246,.04)}
+.chain-card:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,130,246,.2)}
+.chain-info{background:var(--bg);border:1px solid var(--glass-border);cursor:default;opacity:.75}
+.cn-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.cn-icon{font-size:16px;flex-shrink:0}
+.cn-label{font-size:13px;font-weight:600;color:var(--text)}
+.cn-badge{font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(34,197,94,.15);color:var(--green);margin-left:auto;flex-shrink:0}
+.cn-model{font-size:12px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;color:var(--accent);margin-left:24px}
+.cn-meta{font-size:11px;color:var(--text2);margin-left:24px;margin-top:2px}
+.chain-arr{text-align:center;font-size:10px;color:var(--text2);padding:4px 0;position:relative;width:100%}
+.arr-label{font-size:10px;color:var(--text2);margin-left:6px;opacity:.6}
+
+/* 内联编辑面板 */
+.cfg-panel{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);overflow:hidden;margin-bottom:10px}
+.cp-head{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;cursor:pointer;font-size:13px;font-weight:600;transition:background .1s;user-select:none}
+.cp-head:hover{background:rgba(255,255,255,.02)}
+.cp-toggle{font-size:10px;color:var(--text2)}
+.cp-body{padding:16px 18px;border-top:1px solid var(--glass-border)}
+.cp-hint{font-size:12px;color:var(--text2);margin-bottom:14px;padding:8px 12px;background:var(--bg);border-radius:var(--r-sm);line-height:1.5}
+.cp-row{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+
+/* 开关 */
+.cp-switch{position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0}
+.cp-switch input{opacity:0;width:0;height:0}
+.cp-slider{position:absolute;cursor:pointer;inset:0;background:rgba(110,118,129,.3);border-radius:20px;transition:background .2s}
+.cp-slider:before{content:'';position:absolute;height:14px;width:14px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform .2s}
+.cp-switch input:checked+.cp-slider{background:var(--green)}
+.cp-switch input:checked+.cp-slider:before{transform:translateX(16px)}
+
+/* 三列布局 */
+.field-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.field-row-3 .field{margin-bottom:0}
+
+/* 探测按钮 */
+.probe-btn{background:transparent;border:1px solid var(--glass-border);border-radius:var(--r-sm);padding:8px 14px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s;white-space:nowrap;height:36px}
+.probe-btn:hover{background:var(--bg);color:var(--text);border-color:var(--text2)}
+.probe-btn:disabled{opacity:.4;cursor:not-allowed}
+
 @media(max-width:700px){
   .cards{grid-template-columns:repeat(2,1fr)}
   .top-bar{flex-direction:column;align-items:flex-start;gap:12px}
@@ -230,45 +276,128 @@ td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px va
 
   <!-- Config Pane -->
   <div class="tab-pane" id="pane-config">
-    <div class="cfg-section">
-      <h4>🔵 默认路由</h4>
-      <div class="field-row-2">
-        <div class="field"><label>模型</label><input id="def_model" placeholder="deepseek-chat"></div>
-        <div class="field"><label>Provider</label><input id="def_provider" placeholder="deepseek"></div>
-      </div>
-      <div class="field-row-2" style="margin-top:14px">
-        <div class="field"><label>选择密钥</label><select id="def_key" onchange="onKeySelect('def')"></select></div>
-        <div class="field probe-group">
-          <label style="width:100%">端点</label>
-          <input id="def_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)">
-          <button id="def_probeBtn" onclick="probeModels('def')" disabled>探测</button>
+    <!-- 调度链路可视化 -->
+    <div class="chain-wrap">
+      <div class="chain-title">🎯 调度链路 <span style="font-weight:400;font-size:11px;color:var(--text2);margin-left:8px">点击卡片展开编辑</span></div>
+      <div class="chain-flow">
+        <div class="chain-node chain-start">💬 用户请求</div>
+        <div class="chain-arr">▾</div>
+
+        <div class="chain-node chain-card" tabindex="0" onclick="toggleCfgPanel('pc')" data-open="false">
+          <div class="cn-row">
+            <span class="cn-icon" id="pc_icon">🟢</span>
+            <span class="cn-label">智能预检</span>
+            <span class="cn-badge" id="pc_badge">已启用</span>
+          </div>
+          <div class="cn-model" id="pc_model_show">deepseek-v4-flash</div>
+          <div class="cn-meta">先判断消息类型，再决定走哪条路由</div>
+        </div>
+        <div class="chain-arr">▾<span class="arr-label">命中路由 → 直达该模型</span></div>
+
+        <div class="chain-node chain-info">
+          <div class="cn-row">
+            <span class="cn-icon">🔀</span>
+            <span class="cn-label">路由匹配</span>
+            <span class="cn-badge" id="route_badge" style="background:rgba(59,130,246,.15);color:var(--accent)">3 条</span>
+          </div>
+          <div class="cn-model" id="route_names_show">MiMo 2.5 Pro · OpenRouter · MiMo Omni</div>
+          <div class="cn-meta">切换到「路由规则」Tab 管理</div>
+        </div>
+        <div class="chain-arr">▾<span class="arr-label">未匹配 → 走默认</span></div>
+
+        <div class="chain-node chain-card" tabindex="0" onclick="toggleCfgPanel('def')" data-open="false">
+          <div class="cn-row">
+            <span class="cn-icon">🔵</span>
+            <span class="cn-label">默认模型</span>
+          </div>
+          <div class="cn-model" id="def_model_show">-</div>
+          <div class="cn-meta">无路由匹配时的兜底模型</div>
+        </div>
+        <div class="chain-arr">▾<span class="arr-label">失败时</span></div>
+
+        <div class="chain-node chain-card" tabindex="0" onclick="toggleCfgPanel('fb')" data-open="false">
+          <div class="cn-row">
+            <span class="cn-icon">🟡</span>
+            <span class="cn-label">降级兜底</span>
+          </div>
+          <div class="cn-model" id="fb_model_show">-</div>
+          <div class="cn-meta">默认模型不可用时的最后防线</div>
         </div>
       </div>
-      <div id="def_probeResult" class="probe-models" style="display:none;margin-top:8px"></div>
     </div>
-    <div class="cfg-section">
-      <h4>🟡 Fallback</h4>
-      <div class="field-row-2">
-        <div class="field"><label>模型</label><input id="fb_model" placeholder="mimo-v2-flash"></div>
-        <div class="field"><label>Provider</label><input id="fb_provider" placeholder="xiaomi"></div>
+
+    <!-- 内联编辑面板 -->
+    <div id="cfgInlineArea">
+      <!-- Pre-check -->
+      <div class="cfg-panel" id="cfg-pc" style="display:none">
+        <div class="cp-head" onclick="toggleCfgPanel('pc')">
+          <span>🟢 智能预检</span>
+          <span class="cp-toggle">▲</span>
+        </div>
+        <div class="cp-body">
+          <div class="cp-row">
+            <label class="cp-switch">
+              <input type="checkbox" id="pc_enabled" onchange="onCfgChange('pc')">
+              <span class="cp-slider"></span>
+            </label>
+            <span style="font-size:13px;color:var(--text)">启用预检</span>
+            <span style="font-size:11px;color:var(--text2);margin-left:8px">关闭后所有请求直接走路由/默认</span>
+          </div>
+          <div class="field-row-3">
+            <div class="field"><label>模型</label><input id="pc_model" placeholder="deepseek-v4-flash" onchange="onCfgChange('pc')" oninput="updateChain()"></div>
+            <div class="field"><label>Provider</label><input id="pc_provider" placeholder="deepseek" onchange="onCfgChange('pc')"></div>
+            <div class="field"><label>密钥</label><select id="pc_key" onchange="onKeySelect('pc'); onCfgChange('pc'); updateChain()"></select></div>
+          </div>
+          <div class="field-row-2">
+            <div class="field"><label>端点</label><input id="pc_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)"></div>
+            <div class="field" style="display:flex;align-items:flex-end"><button class="probe-btn" id="pc_probeBtn" onclick="probeModels('pc')" disabled>🔍 探测</button></div>
+          </div>
+          <div id="pc_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
+        </div>
       </div>
-      <div class="field-row-2" style="margin-top:14px">
-        <div class="field"><label>选择密钥</label><select id="fb_key" onchange="onKeySelect('fb')"></select></div>
-        <div class="field"><label>端点</label><input id="fb_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)"></div>
+
+      <!-- Default -->
+      <div class="cfg-panel" id="cfg-def" style="display:none">
+        <div class="cp-head" onclick="toggleCfgPanel('def')">
+          <span>🔵 默认模型</span>
+          <span class="cp-toggle">▲</span>
+        </div>
+        <div class="cp-body">
+          <div class="field-row-3">
+            <div class="field"><label>模型</label><input id="def_model" placeholder="nvidia/nemotron-3-ultra-550b-a55b:free" onchange="onCfgChange('def')" oninput="updateChain()"></div>
+            <div class="field"><label>Provider</label><input id="def_provider" placeholder="openrouter" onchange="onCfgChange('def')"></div>
+            <div class="field"><label>密钥</label><select id="def_key" onchange="onKeySelect('def'); onCfgChange('def'); updateChain()"></select></div>
+          </div>
+          <div class="field-row-2">
+            <div class="field probe-group">
+              <label>端点</label>
+              <input id="def_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)">
+              <button class="probe-btn" id="def_probeBtn" onclick="probeModels('def')" disabled>🔍 探测</button>
+            </div>
+          </div>
+          <div id="def_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
+        </div>
+      </div>
+
+      <!-- Fallback -->
+      <div class="cfg-panel" id="cfg-fb" style="display:none">
+        <div class="cp-head" onclick="toggleCfgPanel('fb')">
+          <span>🟡 降级兜底</span>
+          <span class="cp-toggle">▲</span>
+        </div>
+        <div class="cp-body">
+          <div class="cp-hint">当默认模型请求失败（如429超限、网络错误）时自动切换到降级模型</div>
+          <div class="field-row-3">
+            <div class="field"><label>模型</label><input id="fb_model" placeholder="deepseek-v4-pro" onchange="onCfgChange('fb')" oninput="updateChain()"></div>
+            <div class="field"><label>Provider</label><input id="fb_provider" placeholder="deepseek" onchange="onCfgChange('fb')"></div>
+            <div class="field"><label>密钥</label><select id="fb_key" onchange="onKeySelect('fb'); onCfgChange('fb'); updateChain()"></select></div>
+          </div>
+          <div class="field-row-2">
+            <div class="field"><label>端点</label><input id="fb_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)"></div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="cfg-section">
-      <h4>🟢 Pre-check <input type="checkbox" id="pc_enabled" style="width:auto;margin-left:8px" checked> <label for="pc_enabled" style="font-size:11px;text-transform:none;letter-spacing:0;color:var(--text2)">启用</label></h4>
-      <div class="field-row-2">
-        <div class="field"><label>模型</label><input id="pc_model" placeholder="deepseek-chat"></div>
-        <div class="field"><label>Provider</label><input id="pc_provider" placeholder="deepseek"></div>
-      </div>
-      <div class="field-row-2" style="margin-top:14px">
-        <div class="field"><label>选择密钥</label><select id="pc_key" onchange="onKeySelect('pc')"></select></div>
-        <div class="field"><label>端点</label><input id="pc_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)"></div>
-      </div>
-    </div>
-    <div style="margin-top:14px"><button onclick="saveAllCfg()" style="background:var(--accent);border:none;border-radius:var(--r-sm);padding:8px 20px;font-size:13px;color:#fff;cursor:pointer">💾 保存所有配置</button></div>
   </div>
 
   <!-- Logs Pane -->
@@ -338,7 +467,7 @@ td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px va
       <div class="field"><label>API 密钥</label><input id="km_val" placeholder="sk-..." type="password"></div>
       <div class="field"><label>端点 URL</label><input id="km_ep" placeholder="https://api.deepseek.com/v1/chat/completions"></div>
       <div class="field" style="margin-top:4px">
-        <button id="km_probeBtn" onclick="probeModels('km')" style="background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 12px;font-size:11px;cursor:pointer;color:var(--text2)">🔍 测试连接并探测模型</button>
+        <button id="km_probeBtn" onclick="probeModels('km')" style="background:transparent;border:1px solid var(--glass-border);border-radius:var(--r-sm);padding:6px 12px;font-size:11px;cursor:pointer;color:var(--text2)">🔍 测试连接并探测模型</button>
         <div id="km_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
       </div>
     </div>
@@ -486,6 +615,7 @@ function onRouteKeySelect(){
 function probeModels(ctx) {
   var keyAlias, btn, resultEl, modelInput
   if(ctx==='rm'){keyAlias=document.getElementById('rm_key').value; btn=document.getElementById('rm_probeBtn'); resultEl=document.getElementById('rm_probeResult'); modelInput=document.getElementById('rm_model')}
+  else if(ctx==='pc'){keyAlias=document.getElementById('pc_key').value; btn=document.getElementById('pc_probeBtn'); resultEl=document.getElementById('pc_probeResult'); modelInput=document.getElementById('pc_model')}
   else if(ctx==='def'){keyAlias=document.getElementById('def_key').value; btn=document.getElementById('def_probeBtn'); resultEl=document.getElementById('def_probeResult'); modelInput=document.getElementById('def_model')}
   else if(ctx==='km'){probeKeyAddModal(); return}
   else return
@@ -504,8 +634,13 @@ function probeModels(ctx) {
 function showProbeModels(el,mi,models){
   el.style.display='block'
   if(!models||!models.length){el.innerHTML='<span style="color:var(--text2)">无可用模型</span>'; return}
+  var TAG_LABELS={multi:'🖼️多模态',reason:'🧠推理',code:'💻代码',fast:'⚡轻量'}
+  var TAG_COLORS={multi:'#a855f7',reason:'#3b82f6',code:'#22c55e',fast:'#6e7681'}
   var h=''
-  models.forEach(function(m){h+='<span class="m" onclick="pickModel(this,\''+mi.id+'\')">'+esc(m.id)+'</span> '})
+  models.forEach(function(m){
+    var tags=(m.tags||[]).map(function(t){var lb=TAG_LABELS[t]||t; var cl=TAG_COLORS[t]||'var(--text2)'; return '<span style="display:inline-block;padding:0 5px;margin:0 2px;border-radius:3px;font-size:9px;background:'+cl+'20;color:'+cl+'">'+lb+'</span>'}).join('')
+    h+='<span class="m" onclick="pickModel(this,'+"'"+mi.id+"'"+')">'+esc(m.id)+' '+tags+'</span> '
+  })
   el.innerHTML=h+'<div style="margin-top:4px;color:var(--text2);font-size:10px">点击模型名自动填入</div>'
 }
 function pickModel(el,id){
@@ -704,23 +839,96 @@ function confirmDeleteKey(){
 function deleteCurrentKey(){if(!keyEditName)return; closeModal('keyModal'); deleteKeyClick(keyEditName)}
 function syncKeyToProbe(name){openKeyEditModal(name); setTimeout(function(){probeModels('km')},300)}
 
-// ===== CONFIG =====
+// ===== CONFIG - 调度链可视化 =====
+var cfgSaveTimer = null
+
 function renderConfig(){
-  if(!cfg)return
-  var d=cfg.default||{}, fb=cfg.fallback||{}, pc=cfg.precheck||{}
+  if(!cfg) return
+  var d = cfg.default||{}, fb = cfg.fallback||{}, pc = cfg.precheck||{}
   populateSelect('def_key'); populateSelect('fb_key'); populateSelect('pc_key')
-  document.getElementById('def_model').value=d.model||''; document.getElementById('def_provider').value=d.provider||''
-  document.getElementById('def_key').value=d.key_env||''; document.getElementById('def_ep').value=getKeyEndpoint(d.key_env)
-  var db=document.getElementById('def_probeBtn'); if(db)db.disabled=!d.key_env
-  document.getElementById('def_probeResult').style.display='none'
-  document.getElementById('fb_model').value=fb.model||''; document.getElementById('fb_provider').value=fb.provider||''
-  document.getElementById('fb_key').value=fb.key_env||''; document.getElementById('fb_ep').value=getKeyEndpoint(fb.key_env)
-  document.getElementById('pc_model').value=pc.model||''; document.getElementById('pc_provider').value=pc.provider||''
-  document.getElementById('pc_key').value=pc.key_env||''; document.getElementById('pc_ep').value=getKeyEndpoint(pc.key_env)
-  document.getElementById('pc_enabled').checked=pc.enabled!==false
+
+  // 默认模型
+  document.getElementById('def_model').value = d.model||''
+  document.getElementById('def_provider').value = d.provider||''
+  document.getElementById('def_key').value = d.key_env||''
+  document.getElementById('def_ep').value = getKeyEndpoint(d.key_env)
+  var db = document.getElementById('def_probeBtn'); if(db) db.disabled = !d.key_env
+  document.getElementById('def_probeResult').style.display = 'none'
+
+  // Fallback
+  document.getElementById('fb_model').value = fb.model||''
+  document.getElementById('fb_provider').value = fb.provider||''
+  document.getElementById('fb_key').value = fb.key_env||''
+  document.getElementById('fb_ep').value = getKeyEndpoint(fb.key_env)
+
+  // Pre-check
+  document.getElementById('pc_model').value = pc.model||''
+  document.getElementById('pc_provider').value = pc.provider||''
+  document.getElementById('pc_key').value = pc.key_env||''
+  document.getElementById('pc_ep').value = getKeyEndpoint(pc.key_env)
+  document.getElementById('pc_enabled').checked = pc.enabled !== false
+  var pb = document.getElementById('pc_probeBtn'); if(pb) pb.disabled = !pc.key_env
+
+  updateChain()
 }
 
-function saveAllCfg(){saveConfigFull()}
+function updateChain(){
+  // 更新调度链可视化上的模型名称
+  var defM = document.getElementById('def_model').value.trim() || '-'
+  var fbM = document.getElementById('fb_model').value.trim() || '-'
+  var pcM = document.getElementById('pc_model').value.trim() || '-'
+  var pcOn = document.getElementById('pc_enabled').checked
+
+  document.getElementById('def_model_show').textContent = defM
+  document.getElementById('fb_model_show').textContent = fbM
+  document.getElementById('pc_model_show').textContent = pcM
+
+  // 预检状态
+  var pcIcon = document.getElementById('pc_icon')
+  var pcBadge = document.getElementById('pc_badge')
+  if(pcOn){
+    pcIcon.textContent = '🟢'
+    pcBadge.textContent = '已启用'
+    pcBadge.style.color = 'var(--green)'
+  } else {
+    pcIcon.textContent = '⛔'
+    pcBadge.textContent = '已关闭'
+    pcBadge.style.color = 'var(--text2)'
+  }
+
+  // 路由规则统计
+  var routes = (cfg && cfg.routes) || []
+  document.getElementById('route_badge').textContent = routes.length + ' 条'
+  document.getElementById('route_names_show').textContent = routes.length
+    ? routes.map(function(r){return r.label||'?'}).join(' · ')
+    : '无路由规则'
+}
+
+function toggleCfgPanel(key){
+  var panel = document.getElementById('cfg-' + key)
+  var card = document.querySelector('.chain-card[onclick*="' + key + '"]')
+  if(!panel) return
+
+  var isOpen = panel.style.display !== 'none'
+
+  // 关闭所有面板
+  document.querySelectorAll('.cfg-panel').forEach(function(p){p.style.display = 'none'})
+  document.querySelectorAll('.chain-card').forEach(function(c){c.dataset.open = 'false'})
+
+  if(!isOpen){
+    panel.style.display = 'block'
+    if(card) card.dataset.open = 'true'
+    panel.scrollIntoView({behavior:'smooth', block:'nearest'})
+  }
+}
+
+function onCfgChange(key){
+  if(cfgSaveTimer) clearTimeout(cfgSaveTimer)
+  cfgSaveTimer = setTimeout(function(){
+    saveConfigFull()
+    updateChain()
+  }, 600)
+}
 
 // ===== LOGS =====
 function renderLogs(data){
