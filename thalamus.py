@@ -1468,7 +1468,7 @@ class ThalamusHandler(BaseHTTPRequestHandler):
         # Throttle
         now = time.time()
         cache_key = f"_probe_{name}"
-        last_probe = getattr(_spend, cache_key, 0)
+        last_probe = _spend.get(cache_key, 0)
         if now - last_probe < 60:
             self._send_error(429, "Probe cooldown (60s). Please wait.")
             return
@@ -1483,7 +1483,7 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 mid = m.get("id", "")
                 if mid:
                     models.append({"id": mid, "object": m.get("object", "model")})
-            setattr(_spend, cache_key, now)
+            _spend[cache_key] = now
             self._send_json(200, {"models": models})
         except Exception as e:
             log(f"Probe failed for '{name}': {e}")
