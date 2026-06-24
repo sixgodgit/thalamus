@@ -533,7 +533,7 @@ function probeKeyAddModal(){
 
 // ===== CARDS =====
 function renderCards(bal){
-  var calls=(st&&st.calls)||0, dur=(st&&st.uptime)||0, prov=(st&&st.providers)||0, fb=(st&&st.fallbacks)||0
+  var calls=(st&&st.calls)||0, dur=(st&&st.uptime_seconds)||0, prov=Object.keys(st&&st.by_provider||{}).length, fb=(st&&st.fallbacks)||0
   var h='<div class="card"><div class="label">总调用</div><div class="value blue">'+calls+'</div></div>'
   h+='<div class="card"><div class="label">运行时长</div><div class="value" style="font-size:22px">'+fmtDur(dur)+'</div></div>'
   h+='<div class="card"><div class="label">活跃 Provider</div><div class="value green">'+prov+'</div></div>'
