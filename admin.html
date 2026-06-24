@@ -3,170 +3,368 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Thalamus Admin</title>
+<title>Thalamus · 控制台</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh}
-.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:radial-gradient(ellipse at 50% 0%,#1a2332 0%,#0d1117 70%)}
-.login-box{text-align:center;width:100%;max-width:380px}
-.login-box h1{font-size:32px;margin-bottom:4px;background:linear-gradient(135deg,#58a6ff,#3fb950);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.login-box .sub{color:#8b949e;font-size:14px;margin-bottom:28px}
-.login-card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:28px;text-align:left}
-.login-card label{font-size:12px;color:#8b949e;font-weight:600;display:block;margin-bottom:6px}
-.login-card input{width:100%;padding:10px 14px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:14px;outline:none;transition:border .2s;box-sizing:border-box}
-.login-card input:focus{border-color:#58a6ff}
-.login-card .btn{width:100%;margin-top:16px;padding:10px;background:#238636;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
-.login-card .btn:hover{background:#2ea043}
-.login-card .err{color:#f85149;font-size:13px;margin-top:10px;display:none;text-align:center}
-input,select,textarea{width:100%;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px;outline:none;box-sizing:border-box}
-input:focus,select:focus,textarea:focus{border-color:#58a6ff}
-select option{background:#161b22}
-.btn{display:inline-flex;align-items:center;gap:4px;padding:7px 14px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;transition:background .2s;white-space:nowrap}
-.btn:hover{background:#2ea043}
-.btn-o{background:transparent;border:1px solid #30363d;color:#c9d1d9}
-.btn-o:hover{background:#21262d}
-.btn-r{background:#da3633}
-.btn-r:hover{background:#f85149}
-.btn-s{padding:5px 10px;font-size:11px}
-.app-top{background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
-.app-top h1{font-size:16px;color:#f0f6fc;display:flex;align-items:center;gap:6px}
-.app-top .ver{color:#8b949e;font-size:11px;font-weight:400}
-.app-acts{display:flex;gap:4px}
-.wrap{max-width:1200px;margin:0 auto;padding:16px 20px}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
-.stat{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;text-align:center}
-.stat .n{font-size:24px;font-weight:700;color:#f0f6fc}
-.stat .l{font-size:11px;color:#8b949e;margin-top:2px}
-.section{background:#161b22;border:1px solid #30363d;border-radius:8px;margin-bottom:14px;overflow:visible}
-.s-h{padding:12px 16px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center}
-.s-h h2{font-size:14px;font-weight:600}
-.s-b{padding:0}
-.tbl{width:100%;border-collapse:collapse}
-.tbl th{background:#0d1117;padding:8px 12px;text-align:left;color:#8b949e;font-weight:600;font-size:10px;text-transform:uppercase;border-bottom:1px solid #21262d;white-space:nowrap}
-.tbl td{padding:8px 12px;border-bottom:1px solid #21262d;font-size:12px;vertical-align:middle}
-.tbl tr:hover td{background:#1c2128}
-.tbl tr:last-child td{border-bottom:none}
-.b{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap}
-.b-k{background:#1f6feb22;color:#58a6ff}
-.b-t{background:#da363322;color:#f85149}
-.b-s{background:#23863622;color:#3fb950}
-.b-d{background:#8b949e22;color:#8b949e}
-.m{font-family:monospace;font-size:11px;color:#f0f6fc}
-.e{font-family:monospace;font-size:10px;color:#8b949e;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.k{font-family:monospace;font-size:10px;color:#8b949e}
-.pv{display:inline-flex;align-items:center;gap:2px;padding:1px 6px;background:#21262d;border-radius:10px;font-size:10px;color:#8b949e}
-.em{text-align:center;padding:30px;color:#8b949e;font-size:12px}
-.fg{margin-bottom:12px}
-.fg label{display:block;font-size:11px;color:#8b949e;margin-bottom:3px;font-weight:600}
-.fg .h{font-size:10px;color:#6e7681;margin-top:2px}
-.fg textarea{font-family:monospace;min-height:44px;resize:vertical;font-size:11px}
-.fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.pg{display:flex;gap:6px;flex-wrap:wrap}
-.pg input[type=radio]{display:none}
-.pg label{padding:6px 14px;background:#0d1117;border:1px solid #30363d;border-radius:6px;cursor:pointer;font-size:12px;transition:all .2s;text-align:center}
-.pg label:hover{border-color:#8b949e}
-.pg input[type=radio]:checked+label{border-color:#58a6ff;background:#1f6feb22;color:#58a6ff}
-.mo{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
-.mo.on{display:flex}
-.mw{background:#161b22;border:1px solid #30363d;border-radius:10px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto}
-.mh{padding:14px 18px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center}
-.mh h3{font-size:15px;font-weight:600}
-.mc{padding:18px}
-.mf{padding:10px 18px;border-top:1px solid #21262d;display:flex;justify-content:flex-end;gap:6px}
-.toast{position:fixed;bottom:20px;right:20px;background:#238636;color:#fff;padding:10px 16px;border-radius:6px;font-size:12px;z-index:2000;display:none}
-.toast.e{background:#da3633}
-.cfg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;padding:14px}
-.cfg h3{font-size:12px;margin-bottom:8px}
-@media(max-width:768px){.stats{grid-template-columns:1fr 1fr}.cfg{grid-template-columns:1fr}.fr{grid-template-columns:1fr}}
+:root{--bg:#0a0c10;--card:#13161b;--border:#1f2329;--text:#e1e4e8;--text2:#6e7681;--accent:#3b82f6;--green:#22c55e;--yellow:#eab308;--red:#ef4444;--radius:10px;--r-sm:6px}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+input,select,button{font:inherit;color:inherit}
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse at 30% 40%,#0f172a 0%,#0a0c10 70%)}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:40px;width:380px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.login-card h1{font-size:22px;font-weight:600;margin-bottom:6px}
+.login-card p{color:var(--text2);font-size:13px;margin-bottom:24px}
+.login-card input{display:block;width:100%;background:#0d1117;border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 14px;font-size:15px;outline:none;transition:border-color .15s}
+.login-card input:focus{border-color:var(--accent)}
+.login-card button{display:block;width:100%;margin-top:12px;background:var(--accent);border:none;border-radius:var(--r-sm);padding:10px;font-size:15px;font-weight:500;color:#fff;cursor:pointer;transition:opacity .15s}
+.login-card button:hover{opacity:.85}
+.login-card button:disabled{opacity:.4;cursor:not-allowed}
+.login-error{color:var(--red);font-size:12px;margin-top:10px;text-align:center}
+.app{display:none;max-width:1200px;margin:0 auto;padding:24px 20px}
+.app.show{display:block}
+.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}
+.top-bar h1{font-size:20px;font-weight:600}
+.top-bar h1 span{color:var(--accent)}
+.top-bar .actions{display:flex;gap:8px}
+.top-bar .actions button{background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 14px;font-size:12px;cursor:pointer;transition:all .15s;color:var(--text2)}
+.top-bar .actions button:hover{background:var(--card);color:var(--text);border-color:var(--text2)}
+.top-bar .actions .logout{color:var(--red);border-color:rgba(239,68,68,.3)}
+.top-bar .actions .logout:hover{background:rgba(239,68,68,.1);border-color:var(--red)}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.card .label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px}
+.card .value{font-size:26px;font-weight:600;letter-spacing:-.5px}
+.card .sub{font-size:11px;color:var(--text2);margin-top:2px}
+.card .value.green{color:var(--green)}
+.card .value.yellow{color:var(--yellow)}
+.card .value.red{color:var(--red)}
+.card .value.blue{color:var(--accent)}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px}
+.tab{background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 18px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;margin-bottom:-1px}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+.route-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.route-wrap .top-actions{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)}
+.route-wrap .top-actions .left{display:flex;align-items:center;gap:12px}
+.route-wrap .top-actions .left h3{font-size:14px;font-weight:600}
+.route-wrap .top-actions .left .count{font-size:11px;color:var(--text2);background:var(--bg);padding:2px 8px;border-radius:10px}
+.route-wrap .top-actions button{background:var(--accent);border:none;border-radius:var(--r-sm);padding:6px 14px;font-size:12px;color:#fff;cursor:pointer;transition:opacity .15s}
+.route-wrap .top-actions button:hover{opacity:.85}
+table{width:100%;border-collapse:collapse}
+thead th{text-align:left;padding:10px 14px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:rgba(255,255,255,.03)}
+tbody td{padding:10px 14px;font-size:13px;vertical-align:middle}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.tag.code{background:rgba(34,197,94,.15);color:var(--green)}
+.tag.reason{background:rgba(59,130,246,.15);color:var(--accent)}
+.tag.vision{background:rgba(168,85,247,.15);color:#a855f7}
+.tag.daily{background:rgba(110,118,129,.2);color:var(--text2)}
+td .mono{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--text2)}
+td .e-btn{background:transparent;border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s;white-space:nowrap}
+td .e-btn:hover{background:var(--bg);color:var(--text);border-color:var(--text2)}
+td .e-btn.danger{color:var(--red);border-color:rgba(239,68,68,.25)}
+td .e-btn.danger:hover{background:rgba(239,68,68,.1);border-color:var(--red)}
+td[contenteditable]{outline:none;cursor:text;border-radius:4px;padding:2px 4px;transition:background .1s}
+td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px var(--accent)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:14px;width:520px;max-width:92vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal .m-h{padding:18px 22px;border-bottom:1px solid var(--border);font-size:15px;font-weight:600}
+.modal .m-b{padding:18px 22px}
+.modal .m-footer{padding:12px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.modal .m-footer button{background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 16px;font-size:12px;cursor:pointer;transition:all .1s}
+.modal .m-footer button:hover{background:var(--bg)}
+.modal .m-footer .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.modal .m-footer .btn-primary:hover{opacity:.85}
+.modal .m-footer .btn-danger{color:var(--red);border-color:rgba(239,68,68,.3)}
+.modal .m-footer .btn-danger:hover{background:rgba(239,68,68,.1);border-color:var(--red)}
+.field{margin-bottom:14px}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px}
+.field input,.field select,.field textarea{display:block;width:100%;background:#0d1117;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 12px;font-size:13px;outline:none;transition:border-color .15s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
+.field .hint{font-size:11px;color:var(--text2);margin-top:3px}
+.field-row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field-row-2 .field{margin-bottom:0}
+.key-section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:20px}
+.key-section .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.key-section .head h3{font-size:14px;font-weight:600}
+.key-section .head button{background:var(--accent);border:none;border-radius:var(--r-sm);padding:6px 14px;font-size:12px;color:#fff;cursor:pointer;transition:opacity .15s}
+.key-section .head button:hover{opacity:.85}
+.key-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:10px}
+.key-row:last-child{border-bottom:none}
+.key-row .k-main{flex:1;min-width:0}
+.key-row .k-name{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;font-weight:500}
+.key-row .k-ep{font-size:11px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.key-row .k-val{font-size:11px;color:var(--text2);margin-top:1px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace}
+.key-row .k-actions{display:flex;gap:6px;flex-shrink:0}
+.key-row .k-actions button{background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s}
+.key-row .k-actions button:hover{background:var(--bg)}
+.key-row .k-actions .del{color:var(--red);border-color:rgba(239,68,68,.25)}
+.key-row .k-actions .del:hover{background:rgba(239,68,68,.1);border-color:var(--red)}
+.k-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:500}
+.k-badge.env{background:rgba(110,118,129,.2);color:var(--text2)}
+.cfg-section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:12px}
+.cfg-section h4{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:12px}
+.cfg-section .field-row-2 > *{margin-bottom:0}
+.probe-group{display:flex;gap:6px;align-items:flex-end}
+.probe-group select{flex:1}
+.probe-group button{background:var(--accent);border:none;border-radius:var(--r-sm);padding:6px 12px;font-size:11px;color:#fff;cursor:pointer;white-space:nowrap;transition:opacity .15s;height:36px;align-self:flex-end}
+.probe-group button:hover{opacity:.85}
+.probe-group button:disabled{opacity:.4;cursor:not-allowed}
+.probe-models{font-size:11px;color:var(--text2);margin-top:4px;max-height:120px;overflow-y:auto;background:var(--bg);border-radius:var(--r-sm);padding:6px 8px}
+.probe-models .m{display:inline-block;padding:2px 8px;margin:2px;border-radius:4px;background:rgba(59,130,246,.1);color:var(--text);cursor:pointer;font-size:11px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;transition:background .1s}
+.probe-models .m:hover{background:rgba(59,130,246,.3)}
+.probe-models .m.sel{background:var(--accent);color:#fff}
+.logs-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.logs-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)}
+.logs-header .left{display:flex;align-items:center;gap:10px}
+.logs-header .left h3{font-size:14px;font-weight:600}
+.logs-header .left .filter-group{display:flex;gap:4px}
+.logs-header .left .filter-group button{background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .1s}
+.logs-header .left .filter-group button:hover{border-color:var(--text2)}
+.logs-header .left .filter-group button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.logs-body{background:#0a0c10;padding:0;max-height:380px;overflow-y:auto;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.7}
+.logs-body .line{padding:3px 14px;color:#8b949e;transition:background .1s;white-space:pre-wrap;word-break:break-all}
+.logs-body .line:hover{background:rgba(255,255,255,.03)}
+.logs-body .line.err{color:var(--red)}
+.logs-body .line.fbk{color:var(--yellow)}
+.logs-body .line.route{color:var(--accent)}
+.logs-body .line.ok{color:var(--green)}
+.logs-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--text2)}
+.logs-footer .auto-scroll{display:flex;align-items:center;gap:6px}
+.logs-footer .auto-scroll label{font-size:11px;cursor:pointer}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:13px;z-index:200;box-shadow:0 8px 30px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);transition:all .25s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.ok{border-color:rgba(34,197,94,.4)}
+.toast.err{border-color:rgba(239,68,68,.4)}
+.cascade-warn{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--red);line-height:1.6}
+.empty-state{padding:40px 20px;text-align:center;color:var(--text2);font-size:13px}
+.empty-state-small{padding:20px;text-align:center;color:var(--text2);font-size:12px}
+.match-result{margin-top:4px;font-size:11px;padding:4px 8px;border-radius:4px}
+.match-result.yes{background:rgba(34,197,94,.12);color:var(--green)}
+.match-result.no{background:rgba(239,68,68,.1);color:var(--red)}
+.bal-chips{display:flex;gap:10px;margin-top:6px;flex-wrap:wrap}
+.bal-chip{display:flex;align-items:center;gap:4px;font-size:11px;background:var(--bg);padding:3px 10px;border-radius:10px}
+.bal-chip .num{font-weight:600}
+.bal-chip .num.ds{color:var(--green)}
+.bal-chip .num.or{color:var(--accent)}
+@media(max-width:700px){
+  .cards{grid-template-columns:repeat(2,1fr)}
+  .top-bar{flex-direction:column;align-items:flex-start;gap:12px}
+  .field-row-2{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
-<div id="loginScreen" class="login-wrap">
-  <div class="login-box">
+
+<div class="login-wrap" id="loginWrap">
+  <div class="login-card">
     <h1>✦ Thalamus</h1>
-    <div class="sub">模型调度中枢 · 管理面板</div>
-    <div class="login-card">
-      <label>管理密码</label>
-      <input type="password" id="loginPwd" placeholder="输入密码" onkeydown="if(event.key==='Enter')doLogin()" autofocus>
-      <button class="btn" onclick="doLogin()">登录</button>
-      <div class="err" id="loginError">密码错误，请重试</div>
-    </div>
+    <p>v4.0.0 · 模型调度中枢</p>
+    <input type="password" id="pwdInput" placeholder="输入密码" autocomplete="off" onkeydown="if(event.key==='Enter')doLogin()">
+    <button id="loginBtn" onclick="doLogin()">登录</button>
+    <div class="login-error" id="loginErr"></div>
   </div>
 </div>
 
-<div id="app" style="display:none">
-  <div class="app-top">
-    <h1>✦ Thalamus <span class="ver" id="vBadge">v4.0.0</span></h1>
-    <div class="app-acts">
-      <button class="btn btn-o btn-s" onclick="fetchAll()">🔄 刷新</button>
-      <button class="btn btn-o btn-s" onclick="doReload()">⚡ 重载</button>
-      <button class="btn btn-r btn-s" onclick="doLogout()">退出</button>
+<div class="app" id="app">
+  <div class="top-bar">
+    <h1>✦ <span>Thalamus</span> <span style="font-weight:400;font-size:14px;color:var(--text2)">v4.0.0</span></h1>
+    <div class="actions">
+      <button onclick="fetchAll()">🔄 刷新</button>
+      <button onclick="reloadRoutes()">⚡ 重载</button>
+      <button class="logout" onclick="doLogout()">退出</button>
     </div>
   </div>
-  <div class="wrap">
-    <div class="stats" id="statsBox"></div>
-    <div class="stats" id="balanceBox" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:16px"></div>
-    <div class="section">
-      <div class="s-h"><h2>🛣️ 路由规则</h2><button class="btn btn-s" onclick="openRoute(-1)">+ 新建</button></div>
-      <div class="s-b" id="routesBox"></div>
-    </div>
-    <div class="section">
-      <div class="s-h"><h2>🔑 API 密钥</h2><button class="btn btn-s" onclick="openKey()">+ 添加</button></div>
-      <div class="s-b" id="keysBox"></div>
-    </div>
-    <div class="section">
-      <div class="s-h"><h2>⚙️ 系统配置</h2></div>
-      <div class="s-b" id="cfgBox"></div>
-    </div>
-    <div class="section">
-      <div class="s-h"><h2>📋 运行日志</h2></div>
-      <div class="s-b" style="padding:0" id="logsBox"></div>
-    </div>
+  <div class="cards" id="cardsBox"></div>
+  <div class="tabs" id="tabsBar">
+    <button class="tab active" data-tab="routes">路由规则</button>
+    <button class="tab" data-tab="keys">API 密钥</button>
+    <button class="tab" data-tab="config">系统配置</button>
+    <button class="tab" data-tab="logs">运行日志</button>
   </div>
-</div>
 
-<div class="mo" id="rtModal">
-  <div class="mw">
-    <div class="mh"><h3 id="rtTitle">新建路由</h3><button class="btn btn-o btn-s" onclick="closeModal('rtModal')">✕</button></div>
-    <div class="mc">
-      <div class="fg"><label>路由名称</label><input id="rtLabel" placeholder="如: MiMo 2.5 Pro"></div>
-      <div class="fg">
-        <label>用途</label>
-        <div class="pg" id="purposeGroup" onchange="onPurposeChange(event)">
-          <input type="radio" name="p" id="pc" value="code"><label for="pc">💻 代码/运维</label>
-          <input type="radio" name="p" id="pr" value="reasoning"><label for="pr">🧠 推理/分析</label>
-          <input type="radio" name="p" id="pv" value="vision"><label for="pv">👁️ 图片/视觉</label>
-          <input type="radio" name="p" id="pd" value="default"><label for="pd">💬 日常</label>
+  <!-- Routes Pane -->
+  <div class="tab-pane active" id="pane-routes">
+    <div class="route-wrap">
+      <div class="top-actions">
+        <div class="left"><h3>路由规则</h3><span class="count" id="routeCount">0</span></div>
+        <button onclick="openRoute()">+ 新建</button>
+      </div>
+      <div style="overflow-x:auto"><table>
+        <thead><tr>
+          <th style="width:64px">用途</th>
+          <th style="min-width:120px">名称</th>
+          <th style="min-width:120px">模型</th>
+          <th>Provider</th>
+          <th>密钥</th>
+          <th>端点</th>
+          <th style="width:80px">操作</th>
+        </tr></thead>
+        <tbody id="routesBody"></tbody>
+      </table></div>
+      <div class="empty-state" id="routesEmpty" style="display:none">暂无路由规则</div>
+    </div>
+  </div>
+
+  <!-- Keys Pane -->
+  <div class="tab-pane" id="pane-keys">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div class="key-section">
+        <div class="head"><h3>🔑 自定义密钥</h3><button onclick="openKeyAddModal()">+ 添加</button></div>
+        <div id="keysBody"></div>
+        <div class="empty-state-small" id="keysEmpty" style="display:none">暂无自定义密钥</div>
+      </div>
+      <div class="key-section">
+        <div class="head"><h3>🌐 环境变量密钥</h3></div>
+        <div id="envKeysBody"></div>
+        <div class="empty-state-small" id="envKeysEmpty" style="display:none">无环境变量密钥</div>
+        <div class="hint" style="margin-top:12px;font-size:11px;color:var(--text2)">环境变量密钥仅供读取</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config Pane -->
+  <div class="tab-pane" id="pane-config">
+    <div class="cfg-section">
+      <h4>🔵 默认路由</h4>
+      <div class="field-row-2">
+        <div class="field"><label>模型</label><input id="def_model" placeholder="deepseek-chat"></div>
+        <div class="field"><label>Provider</label><input id="def_provider" placeholder="deepseek"></div>
+      </div>
+      <div class="field-row-2" style="margin-top:14px">
+        <div class="field"><label>选择密钥</label><select id="def_key" onchange="onKeySelect('def')"></select></div>
+        <div class="field probe-group">
+          <label style="width:100%">端点</label>
+          <input id="def_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)">
+          <button id="def_probeBtn" onclick="probeModels('def')" disabled>探测</button>
         </div>
-        <div class="h">选择用途后自动填充匹配关键词</div>
       </div>
-      <div class="fg"><label>匹配关键词（正则）</label><textarea id="rtPattern" rows="2" placeholder="如: (代码|编程|修.*bug|部署)"></textarea><div class="h">用户消息含这些关键词时路由到此模型</div></div>
-      <div class="fr">
-        <div class="fg"><label>模型 ID</label><input id="rtModel" placeholder="mimo-v2.5-pro"><div class="h">API 请求中的 model 参数</div></div>
-        <div class="fg"><label>Provider</label><input id="rtProv" placeholder="xiaomi"><div class="h">标识，如 xiaomi / deepseek</div></div>
-      </div>
-      <div class="fg"><label>API 端点</label><input id="rtEp" placeholder="https://token-plan-cn.xiaomimimo.com/v1/chat/completions"><div class="h">完整 URL，含 /v1/chat/completions</div></div>
-      <div class="fg"><label>API 密钥</label><select id="rtKey"></select><div class="h">先在「API 密钥」区添加</div></div>
-      <input type="hidden" id="rtIdx" value="-1">
+      <div id="def_probeResult" class="probe-models" style="display:none;margin-top:8px"></div>
     </div>
-    <div class="mf">
-      <button class="btn btn-r btn-s" id="rtDelBtn" style="margin-right:auto;display:none" onclick="delRoute()">🗑️ 删除</button>
-      <button class="btn btn-o btn-s" onclick="closeModal('rtModal')">取消</button>
-      <button class="btn btn-s" onclick="saveRoute()">✅ 保存</button>
+    <div class="cfg-section">
+      <h4>🟡 Fallback</h4>
+      <div class="field-row-2">
+        <div class="field"><label>模型</label><input id="fb_model" placeholder="mimo-v2-flash"></div>
+        <div class="field"><label>Provider</label><input id="fb_provider" placeholder="xiaomi"></div>
+      </div>
+      <div class="field-row-2" style="margin-top:14px">
+        <div class="field"><label>选择密钥</label><select id="fb_key" onchange="onKeySelect('fb')"></select></div>
+        <div class="field"><label>端点</label><input id="fb_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)"></div>
+      </div>
+    </div>
+    <div class="cfg-section">
+      <h4>🟢 Pre-check <input type="checkbox" id="pc_enabled" style="width:auto;margin-left:8px" checked> <label for="pc_enabled" style="font-size:11px;text-transform:none;letter-spacing:0;color:var(--text2)">启用</label></h4>
+      <div class="field-row-2">
+        <div class="field"><label>模型</label><input id="pc_model" placeholder="deepseek-chat"></div>
+        <div class="field"><label>Provider</label><input id="pc_provider" placeholder="deepseek"></div>
+      </div>
+      <div class="field-row-2" style="margin-top:14px">
+        <div class="field"><label>选择密钥</label><select id="pc_key" onchange="onKeySelect('pc')"></select></div>
+        <div class="field"><label>端点</label><input id="pc_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)"></div>
+      </div>
+    </div>
+    <div style="margin-top:14px"><button onclick="saveAllCfg()" style="background:var(--accent);border:none;border-radius:var(--r-sm);padding:8px 20px;font-size:13px;color:#fff;cursor:pointer">💾 保存所有配置</button></div>
+  </div>
+
+  <!-- Logs Pane -->
+  <div class="tab-pane" id="pane-logs">
+    <div class="logs-wrap">
+      <div class="logs-header">
+        <div class="left"><h3>运行日志</h3><div class="filter-group" id="logFilters"><button class="active" data-filter="all">全部</button><button data-filter="error">错误</button><button data-filter="fallback">降级</button><button data-filter="route">路由</button><button data-filter="call">调用</button></div></div>
+      </div>
+      <div class="logs-body" id="logsBody"></div>
+      <div class="logs-footer">
+        <span id="logMeta"></span>
+        <div class="auto-scroll"><input type="checkbox" id="autoScroll" checked><label for="autoScroll">自动滚动</label></div>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="mo" id="keyModal">
-  <div class="mw" style="max-width:420px">
-    <div class="mh"><h3>添加 API 密钥</h3><button class="btn btn-o btn-s" onclick="closeModal('keyModal')">✕</button></div>
-    <div class="mc">
-      <div class="fg"><label>密钥名称</label><input id="keyName" placeholder="如: MY_OPENAI_KEY"></div>
-      <div class="fg"><label>API 密钥</label><input id="keyVal" type="password" placeholder="sk-... 或 cfk_..."><div class="h">保存后不可查看，仅显示脱敏版本</div></div>
+<!-- Route Modal -->
+<div class="modal-overlay" id="routeModal">
+  <div class="modal">
+    <div class="m-h" id="routeModalTitle">新建路由</div>
+    <div class="m-b">
+      <div class="field"><label>名称</label><input id="rm_name" placeholder="MiMo 2.5 Pro"></div>
+      <div class="field">
+        <label>用途分类</label>
+        <select id="rm_usage" onchange="onUsageChange()">
+          <option value="code">代码/运维</option>
+          <option value="reason">推理/分析</option>
+          <option value="vision">图片/视觉</option>
+          <option value="daily">日常/兜底</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>匹配关键词（正则，逗号分隔）</label>
+        <textarea id="rm_pattern" rows="2" placeholder="代码,编程,部署,debug,git" style="resize:vertical"></textarea>
+        <div class="hint">输入文本测试匹配：<input type="text" id="rm_testInput" placeholder="输入测试文本..." style="display:inline-block;width:auto;font-size:11px;padding:2px 8px;margin-left:4px" onkeydown="if(event.key==='Enter')testRouteMatch()"></div>
+        <div id="rm_testResult" style="display:none;font-size:11px;margin-top:4px;padding:4px 8px;border-radius:4px"></div>
+      </div>
+      <div class="field-row-2">
+        <div class="field"><label>模型</label><input id="rm_model" placeholder="mimo-v2.5-pro"></div>
+        <div class="field"><label>Provider</label><input id="rm_provider" placeholder="xiaomi"></div>
+      </div>
+      <div class="field-row-2" style="margin-top:14px">
+        <div class="field"><label>选择密钥</label><select id="rm_key" onchange="onRouteKeySelect()"></select></div>
+        <div class="field"><label>端点</label><input id="rm_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(13,17,23,.5)"></div>
+      </div>
+      <div class="field">
+        <div class="probe-group"><button id="rm_probeBtn" onclick="probeModels('rm')" disabled>🔍 探测可用模型</button></div>
+        <div id="rm_probeResult" class="probe-models" style="display:none;margin-top:4px"></div>
+      </div>
     </div>
-    <div class="mf">
-      <button class="btn btn-o btn-s" onclick="closeModal('keyModal')">取消</button>
-      <button class="btn btn-s" onclick="saveKey()">✅ 保存</button>
+    <div class="m-footer">
+      <button onclick="closeModal('routeModal')">取消</button>
+      <button class="btn-danger" id="rm_deleteBtn" onclick="deleteRoute()" style="display:none">删除</button>
+      <button class="btn-primary" onclick="saveRoute()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Key Add/Edit Modal -->
+<div class="modal-overlay" id="keyModal">
+  <div class="modal">
+    <div class="m-h" id="keyModalTitle">添加自定义密钥</div>
+    <div class="m-b">
+      <div id="keyCascadeWarn" class="cascade-warn" style="display:none"></div>
+      <div class="field"><label>别名</label><input id="km_name" placeholder="deepseek, openrouter, xiaomi"><div class="hint">小写英文+下划线</div></div>
+      <div class="field"><label>API 密钥</label><input id="km_val" placeholder="sk-..." type="password"></div>
+      <div class="field"><label>端点 URL</label><input id="km_ep" placeholder="https://api.deepseek.com/v1/chat/completions"></div>
+      <div class="field" style="margin-top:4px">
+        <button id="km_probeBtn" onclick="probeModels('km')" style="background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 12px;font-size:11px;cursor:pointer;color:var(--text2)">🔍 测试连接并探测模型</button>
+        <div id="km_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
+      </div>
+    </div>
+    <div class="m-footer">
+      <button onclick="closeModal('keyModal')">取消</button>
+      <button class="btn-danger" id="km_deleteBtn" onclick="deleteCurrentKey()" style="display:none">删除</button>
+      <button class="btn-primary" onclick="saveKey()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Key Confirm Modal -->
+<div class="modal-overlay" id="delKeyConfirmModal">
+  <div class="modal">
+    <div class="m-h">确认删除密钥</div>
+    <div class="m-b">
+      <p id="delKeyMsg" style="font-size:13px;margin-bottom:12px"></p>
+      <div id="delKeyAffected" style="display:none;margin-top:8px">
+        <p style="font-size:12px;color:var(--text2);margin-bottom:6px">以下配置正在使用此密钥：</p>
+        <ul id="delKeyAffectedList" style="font-size:12px;color:var(--red);margin-left:18px;line-height:1.8"></ul>
+        <p style="font-size:11px;color:var(--text2);margin-top:8px">删除后这些配置将失效</p>
+      </div>
+    </div>
+    <div class="m-footer">
+      <button onclick="closeModal('delKeyConfirmModal')">取消</button>
+      <button class="btn-danger" onclick="confirmDeleteKey()">确认删除</button>
     </div>
   </div>
 </div>
@@ -174,379 +372,379 @@ select option{background:#161b22}
 <div class="toast" id="toast"></div>
 
 <script>
-var token = localStorage.getItem('tk') || '';
-var cfg = null;
-var st = null;
+// ===== STATE =====
+var TOKEN = null, cfg = null, st = null, routeEditIdx = -1, keyEditName = null, pendingDeleteKey = null
+var allLogs = [], logFilter = 'all'
+var KEYS_SELECTOR = {}
+var PROBE_CACHE = {}
+var USAGE_KEYWORDS = {
+  code: '代码,编程,写程序,重构,部署,deploy,运维,server,nginx,docker,systemctl,ssh,git,commit,PR,config,shell,bash,脚本,修复,报错,error,exception,traceback,日志分析,调试,debug,cron,备份,安装,apt,pip,npm,编译,make,测试,test,pytest',
+  reason: '分析,对比,比较,推理,为什么,原因,根因,深度,论证,评估,策略,方案,设计架构,优缺点,权衡,决策,审查,审计,review,评审',
+  vision: '图片,截图,照片,图像,看图,OCR,识别图,vision,视觉,多媒体',
+  daily: ''
+}
 
-var PP = {
-  code: '(代码|编程|写.*程序|修.*bug|修复|重构|部署|deploy|运维|nginx|docker|ssh|git|测试|debug|error|exception|配置|cron)',
-  reasoning: '(分析|对比|比较|推理|为什么|原因|根因|评估|策略|方案|审查|review|决策|架构)',
-  vision: '(图片|截图|照片|图像|看图|OCR|识别|vision|视觉|多媒体)',
-  default: ''
-};
+// ===== HELPERS =====
+function rn(s,n){return s&&s.length>n?s.slice(0,n)+'…':s||''}
+function esc(s){if(typeof s!=='string')return s||''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toast(msg,isErr){var e=document.getElementById('toast'); e.innerHTML=msg; e.className='toast show '+(isErr?'err':'ok'); clearTimeout(e._t); e._t=setTimeout(function(){e.className='toast'},2500)}
+function closeModal(id){document.getElementById(id).classList.remove('show')}
+function getKeyEndpoint(alias){var k=KEYS_SELECTOR[alias]; return k?k.endpoint||'':''}
+function getKeyLabel(alias){var k=KEYS_SELECTOR[alias]; if(!k)return alias; var e=k.endpoint?' · '+rn(k.endpoint,40):''; return alias+(k.type==='env'?' (env)':'')+e}
 
+// ===== API =====
+function api(method, path, body) {
+  var opts = {method:method, headers:{}}
+  if (TOKEN) opts.headers['Authorization'] = 'Bearer ' + TOKEN
+  if (body) {opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body)}
+  return fetch(path, opts).then(function(r){
+    if (r.status===401) {doLogout(); throw new Error('Unauthorized')}
+    return r.json().then(function(j){if (j.error) throw new Error(j.error); return j})
+  })
+}
+
+// ===== LOGIN =====
 function doLogin() {
-  var p = document.getElementById('loginPwd').value;
-  if (!p) return;
-  api('POST', '/admin/api/login', {password: p}).then(function(d) {
-    token = d.token;
-    localStorage.setItem('tk', token);
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    fetchAll();
-  }).catch(function() {
-    document.getElementById('loginError').style.display = 'block';
-  });
+  var pwd=document.getElementById('pwdInput').value; if(!pwd) return
+  var btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='验证中...'
+  api('POST','/admin/api/login',{password:pwd}).then(function(d){
+    TOKEN=d.token; document.getElementById('loginWrap').style.display='none'
+    document.getElementById('app').className='app show'
+    fetchAll()
+  }).catch(function(e){
+    document.getElementById('loginErr').textContent=e.message||'登录失败'
+    btn.disabled=false; btn.textContent='登录'
+  })
 }
-
 function doLogout() {
-  token = '';
-  localStorage.removeItem('tk');
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'flex';
-  document.getElementById('loginPwd').value = '';
+  TOKEN = null; document.getElementById('loginWrap').style.display = 'flex'
+  document.getElementById('app').className='app'
 }
 
-function api(m, p, b) {
-  var opts = {method: m, headers: {'Content-Type': 'application/json'}};
-  if (token) opts.headers['Authorization'] = 'Bearer ' + token;
-  if (b) opts.body = JSON.stringify(b);
-  return fetch(p, opts).then(function(r) {
-    return r.json().then(function(d) {
-      if (!r.ok) throw new Error(d.error || 'fail');
-      return d;
-    });
-  });
-}
+// ===== TABS =====
+document.querySelectorAll('.tab').forEach(function(t){
+  t.addEventListener('click',function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')})
+    document.querySelectorAll('.tab-pane').forEach(function(x){x.classList.remove('active')})
+    this.classList.add('active')
+    document.getElementById('pane-'+this.dataset.tab).classList.add('active')
+  })
+})
 
-function toast(msg, err) {
-  var el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast' + (err ? ' e' : '');
-  el.style.display = 'block';
-  setTimeout(function() { el.style.display = 'none'; }, 3000);
-}
+// Log filter
+document.getElementById('logFilters').addEventListener('click',function(e){
+  if(e.target.tagName!=='BUTTON')return
+  this.querySelectorAll('button').forEach(function(b){b.classList.remove('active')})
+  e.target.classList.add('active'); logFilter=e.target.dataset.filter; applyLogFilter()
+})
 
-function mask(k) {
-  if (!k || k.length < 8) return '****';
-  return k.slice(0,4) + '****' + k.slice(-4);
-}
-
-function detectPurpose(label, model, prov, pattern) {
-  var t = (label||'') + ' ' + (model||'') + ' ' + (prov||'') + ' ' + (pattern||'');
-  // 按优先级判断：OpenRouter 强信号 > 视觉 > 代码关键词
-  if (/OpenRouter/.test(t)) return 'reasoning';
-  if (/Omni|vision|视觉|图片|OCR|截图/.test(t)) return 'vision';
-  if (/MiMo.*2\.5|xiao.*code|^代码|编程|部署|运维|docker|nginx|ssh|bug|重构|测试/.test(t)) return 'code';
-  if (/analy|reason|推理|分析|对比|评估|策略/.test(t)) return 'reasoning';
-  return 'default';
-}
-
-var PURPOSE_LABEL = {code:'代码/运维',reasoning:'推理/分析',vision:'图片/视觉',default:'日常对话'};
-var PURPOSE_CLASS = {code:'b b-k',reasoning:'b b-t',vision:'b b-s',default:'b b-d'};
-
+// ===== FETCH =====
 function fetchAll() {
   Promise.all([
-    api('GET', '/admin/api/config'),
-    api('GET', '/admin/api/stats'),
-    api('GET', '/admin/api/logs'),
-    api('GET', '/admin/api/balances')
-  ]).then(function(r) {
-    cfg = r[0]; st = r[1];
-    render();
-    renderLogs(r[2]);
-    renderBalances(r[3]);
-  }).catch(function(e) {
-    if ((e.message||'').indexOf('401') >= 0) doLogout();
-    else toast(e.message, true);
-  });
+    api('GET','/admin/api/config'),
+    api('GET','/admin/api/stats'),
+    api('GET','/admin/api/logs'),
+    api('GET','/admin/api/balances')
+  ]).then(function(r){
+    cfg=r[0]; st=r[1]; refreshKeySelector(); renderCards(r[3])
+    renderRoutes(); renderKeys(); renderConfig(); renderLogs(r[2])
+  }).catch(function(e){toast(e.message,true)})
+}
+function reloadRoutes() {
+  api('POST','/admin/api/reload').then(function(){toast('已重载'); fetchAll()}).catch(function(e){toast(e.message,true)})
 }
 
-function render() {
-  if (!cfg) return;
-  document.getElementById('vBadge').textContent = 'v' + (cfg.version || '4.0.0');
+function refreshKeySelector() {
+  KEYS_SELECTOR={}; if(!cfg) return
+  if(cfg.custom_keys) for(var k in cfg.custom_keys){var v=cfg.custom_keys[k]; KEYS_SELECTOR[k]={endpoint:v.endpoint||'',type:'custom',key:v.key||''}}
+  if(cfg.env_keys) for(var k in cfg.env_keys){var v=cfg.env_keys[k]; KEYS_SELECTOR[k]={endpoint:v.endpoint||'',type:'env',prefix:v.prefix||''}}
+}
 
-  // stats
-  var s = st || {};
-  var up = s.uptime_seconds || 0;
-  var upStr = up > 86400 ? Math.floor(up/86400)+'d '+(Math.floor((up%86400)/3600))+'h' : Math.floor(up/3600)+'h '+(Math.floor((up%3600)/60))+'m';
-  document.getElementById('statsBox').innerHTML = 
-    '<div class="stat"><div class="n">'+(s.calls||0)+'</div><div class="l">总调用</div></div>' +
-    '<div class="stat"><div class="n">'+upStr+'</div><div class="l">运行时长</div></div>' +
-    '<div class="stat"><div class="n">'+(s.by_provider?Object.keys(s.by_provider).length:0)+'</div><div class="l">活跃 Provider</div></div>' +
-    '<div class="stat"><div class="n" style="color:'+((s.fallbacks||0)>0?'#d29922':'#3fb950')+'">'+(s.fallbacks||0)+'</div><div class="l">Fallback</div></div>';
+function populateSelect(id) {
+  var sel=document.getElementById(id); if(!sel) return
+  sel.innerHTML='<option value="">— 选择密钥 —</option>'
+  Object.keys(KEYS_SELECTOR).sort().forEach(function(k){
+    var o=document.createElement('option'); o.value=k; o.textContent=getKeyLabel(k); sel.appendChild(o)
+  })
+}
 
-  // routes
-  var routes = cfg.routes || [];
-  var rHtml = '';
-  if (routes.length) {
-    rHtml = '<table class="tbl"><thead><tr><th>用途</th><th>名称</th><th>模型</th><th>Provider</th><th>端点</th><th>密钥</th><th style="text-align:center">操作</th></tr></thead><tbody>';
-    for (var i = 0; i < routes.length; i++) {
-      var r = routes[i];
-      var rawPat = r.pattern ? (r.pattern.source || r.pattern) : '';
-      var p = detectPurpose(r.label, r.model, r.provider, rawPat);
-      rHtml += '<tr>' +
-        '<td><span class="'+PURPOSE_CLASS[p]+'">'+PURPOSE_LABEL[p]+'</span></td>' +
-        '<td style="font-weight:500">'+esc(r.label||'N/A')+'</td>' +
-        '<td class="m">'+esc(r.model||'N/A')+'</td>' +
-        '<td><span class="pv">'+esc(r.provider||'N/A')+'</span></td>' +
-        '<td class="e" title="'+esc(r.endpoint||'')+'">'+esc(r.endpoint||'N/A')+'</td>' +
-        '<td class="k">'+esc(r.key_env||'N/A')+'</td>' +
-        '<td style="text-align:center"><button class="btn btn-o btn-s" onclick="openRoute('+i+')">编辑</button></td>' +
-        '</tr>';
-    }
-    rHtml += '</tbody></table>';
-  } else {
-    rHtml = '<div class="em">暂无路由规则</div>';
+function onKeySelect(pfx){
+  var sel=document.getElementById(pfx+'_key'), ep=document.getElementById(pfx+'_ep'), btn=document.getElementById(pfx+'_probeBtn')
+  var res=document.getElementById(pfx+'_probeResult')
+  if(sel.value&&KEYS_SELECTOR[sel.value]){ep.value=KEYS_SELECTOR[sel.value].endpoint; if(btn)btn.disabled=false}
+  else{ep.value=''; if(btn)btn.disabled=true}
+  if(res){res.style.display='none'; res.innerHTML=''}
+}
+function onRouteKeySelect(){
+  var sel=document.getElementById('rm_key'), ep=document.getElementById('rm_ep'), btn=document.getElementById('rm_probeBtn'), res=document.getElementById('rm_probeResult')
+  if(sel.value&&KEYS_SELECTOR[sel.value]){ep.value=KEYS_SELECTOR[sel.value].endpoint; btn.disabled=false}
+  else{ep.value=''; btn.disabled=true}
+  if(res){res.style.display='none'; res.innerHTML=''}
+}
+
+// ===== PROBE =====
+function probeModels(ctx) {
+  var keyAlias, btn, resultEl, modelInput
+  if(ctx==='rm'){keyAlias=document.getElementById('rm_key').value; btn=document.getElementById('rm_probeBtn'); resultEl=document.getElementById('rm_probeResult'); modelInput=document.getElementById('rm_model')}
+  else if(ctx==='def'){keyAlias=document.getElementById('def_key').value; btn=document.getElementById('def_probeBtn'); resultEl=document.getElementById('def_probeResult'); modelInput=document.getElementById('def_model')}
+  else if(ctx==='km'){probeKeyAddModal(); return}
+  else return
+  if(!keyAlias){toast('请先选择密钥',true); return}
+  if(!KEYS_SELECTOR[keyAlias]){toast('密钥不存在',true); return}
+  var k=KEYS_SELECTOR[keyAlias]; if(!k.endpoint){toast('密钥没有端点',true); return}
+  if(PROBE_CACHE[keyAlias]&&(Date.now()-PROBE_CACHE[keyAlias].ts)<60000){
+    showProbeModels(resultEl,modelInput,PROBE_CACHE[keyAlias].models); return
   }
-  document.getElementById('routesBox').innerHTML = rHtml;
+  btn.disabled=true; resultEl.style.display='block'; resultEl.innerHTML='<span style="color:var(--text2)">探测中...</span>'
+  api('POST','/admin/api/keys/probe',{name:keyAlias}).then(function(d){
+    PROBE_CACHE[keyAlias]={models:d.models,ts:Date.now()}
+    showProbeModels(resultEl,modelInput,d.models); btn.disabled=false
+  }).catch(function(e){resultEl.innerHTML='<span style="color:var(--red)">探测失败: '+esc(e.message)+'</span>'; btn.disabled=false})
+}
+function showProbeModels(el,mi,models){
+  el.style.display='block'
+  if(!models||!models.length){el.innerHTML='<span style="color:var(--text2)">无可用模型</span>'; return}
+  var h=''
+  models.forEach(function(m){h+='<span class="m" onclick="pickModel(this,\''+mi.id+'\')">'+esc(m.id)+'</span> '})
+  el.innerHTML=h+'<div style="margin-top:4px;color:var(--text2);font-size:10px">点击模型名自动填入</div>'
+}
+function pickModel(el,id){
+  document.getElementById(id).value=el.textContent.trim()
+  document.querySelectorAll('.probe-models .m').forEach(function(m){m.classList.remove('sel')})
+  el.classList.add('sel')
+}
+function probeKeyAddModal(){
+  var name=document.getElementById('km_name').value.trim(), key=document.getElementById('km_val').value.trim(), ep=document.getElementById('km_ep').value.trim()
+  if(!name||!key){toast('请先填写密钥',true); return}
+  if(!ep){toast('请先填写端点URL',true); return}
+  document.getElementById('km_probeBtn').disabled=true
+  document.getElementById('km_probeResult').style.display='block'
+  document.getElementById('km_probeResult').innerHTML='<span style="color:var(--text2)">保存并探测中...</span>'
+  api('POST','/admin/api/keys/add',{name:name,key:key,endpoint:ep}).then(function(){
+    return api('POST','/admin/api/keys/probe',{name:name})
+  }).then(function(d){
+    var h=''
+    d.models.forEach(function(m){h+='<span class="m" style="cursor:default">'+esc(m.id)+'</span> '})
+    document.getElementById('km_probeResult').innerHTML=h||'<span style="color:var(--green)">✅ 连接成功</span>'
+    toast('密钥已保存'); fetchAll()
+    document.getElementById('km_probeBtn').disabled=false
+  }).catch(function(e){document.getElementById('km_probeResult').innerHTML='<span style="color:var(--red)">探测失败: '+esc(e.message)+'</span>'; document.getElementById('km_probeBtn').disabled=false})
+}
 
-  // keys
-  keys = cfg.keys || {};
-  var ke = Object.keys(keys);
-  var kHtml = '';
-  if (ke.length) {
-    kHtml = '<table class="tbl"><thead><tr><th>名称</th><th>密钥值</th><th style="text-align:center">操作</th></tr></thead><tbody>';
-    for (var i = 0; i < ke.length; i++) {
-      var n = ke[i];
-      kHtml += '<tr><td style="font-weight:500;font-family:monospace">'+esc(n)+'</td><td class="k">'+mask(keys[n])+'</td><td style="text-align:center"><button class="btn btn-r btn-s" onclick="delKey(\''+esc(n)+'\')">删除</button></td></tr>';
-    }
-    kHtml += '</tbody></table>';
-  } else {
-    var envNames = cfg.env_keys ? Object.keys(cfg.env_keys) : [];
-    kHtml = '<div class="em">暂无自定义密钥。系统密钥：' + envNames.map(function(k) { return '<code style="font-size:11px">'+k+'</code>'; }).join(', ') + '</div>';
+// ===== CARDS =====
+function renderCards(bal){
+  var calls=(st&&st.calls)||0, dur=(st&&st.uptime)||0, prov=(st&&st.providers)||0, fb=(st&&st.fallbacks)||0
+  var h='<div class="card"><div class="label">总调用</div><div class="value blue">'+calls+'</div></div>'
+  h+='<div class="card"><div class="label">运行时长</div><div class="value" style="font-size:22px">'+fmtDur(dur)+'</div></div>'
+  h+='<div class="card"><div class="label">活跃 Provider</div><div class="value green">'+prov+'</div></div>'
+  h+='<div class="card"><div class="label">Fallback 次数</div><div class="value '+(fb>0?'yellow':'green')+'">'+fb+'</div>'
+  if(bal){
+    h+='<div class="bal-chips">'
+    if(bal.deepseek&&bal.deepseek.balance_infos){h+='<div class="bal-chip">DeepSeek <span class="num ds">¥'+parseFloat(bal.deepseek.balance_infos[0].total_balance||0).toFixed(2)+'</span></div>'}
+    if(bal.openrouter&&bal.openrouter.limit_remaining!==undefined){h+='<div class="bal-chip">OpenRouter <span class="num or">$'+bal.openrouter.limit_remaining.toFixed(2)+'</span></div>'}
+    h+='</div>'
   }
-  document.getElementById('keysBox').innerHTML = kHtml;
-
-  // config
-  var df = cfg.default || {};
-  var fb = cfg.fallback || {};
-  var pc = cfg.precheck || {};
-  document.getElementById('cfgBox').innerHTML =
-    '<div class="cfg">' +
-    '  <div><h3 style="color:#58a6ff">🔵 默认路由</h3>' +
-    '    <div class="fg"><label>模型</label><input id="cdm" value="'+esc(df.model||'')+'"></div>' +
-    '    <div class="fg"><label>Provider</label><input id="cdp" value="'+esc(df.provider||'')+'"></div>' +
-    '    <div class="fg"><label>端点</label><input id="cde" value="'+esc(df.endpoint||'')+'"></div>' +
-    '    <div class="fg"><label>密钥</label><input id="cdk" value="'+esc(df.key_env||'')+'"></div>' +
-    '  </div>' +
-    '  <div><h3 style="color:#d29922">🟡 Fallback</h3>' +
-    '    <div class="fg"><label>模型</label><input id="cfm" value="'+esc(fb.model||'')+'"></div>' +
-    '    <div class="fg"><label>Provider</label><input id="cfp" value="'+esc(fb.provider||'')+'"></div>' +
-    '    <div class="fg"><label>端点</label><input id="cfe" value="'+esc(fb.endpoint||'')+'"></div>' +
-    '    <div class="fg"><label>密钥</label><input id="cfk" value="'+esc(fb.key_env||'')+'"></div>' +
-    '  </div>' +
-    '  <div><h3 style="color:#3fb950">🟢 Pre-check</h3>' +
-    '    <div class="fg"><label>启用</label><select id="cpe"><option value="true"'+(pc.enabled===true?' selected':'')+'>开启</option><option value="false"'+(pc.enabled===false?' selected':'')+'>关闭</option></select></div>' +
-    '    <div class="fg"><label>模型</label><input id="cpm" value="'+esc(pc.model||'')+'"></div>' +
-    '    <div class="fg"><label>Provider</label><input id="cpp" value="'+esc(pc.provider||'')+'"></div>' +
-    '    <div class="fg"><label>端点</label><input id="cpep" value="'+esc(pc.endpoint||'')+'"></div>' +
-    '  </div>' +
-    '</div>' +
-    '<div style="padding:10px 16px;border-top:1px solid #21262d;text-align:right"><button class="btn btn-s" onclick="saveCfg()">💾 保存</button></div>';
+  h+='</div>'
+  document.getElementById('cardsBox').innerHTML=h
 }
+function fmtDur(s){if(s<60)return Math.round(s)+'s'; if(s<3600)return Math.floor(s/60)+'m '+Math.round(s%60)+'s'; if(s<86400)return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'; return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h'}
 
-function renderLogs(data) {
-  if (!data) return;
-  var lines = data.lines || [];
-  var total = data.total || 0;
-  var h = '';
-  if (lines.length) {
-    h = '<div style="background:#0d1117;padding:10px 14px;font-family:monospace;font-size:10px;line-height:1.6;max-height:400px;overflow-y:auto;color:#8b949e">';
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      var cls = '';
-      if (line.indexOf('ERROR') >= 0 || line.indexOf('FATAL') >= 0) cls = ' style="color:#f85149"';
-      else if (line.indexOf('FALLBACK') >= 0) cls = ' style="color:#d29922"';
-      else if (line.indexOf('ROUTE') >= 0) cls = ' style="color:#58a6ff"';
-      else if (line.indexOf('CALL') >= 0) cls = ' style="color:#3fb950"';
-      else if (line.indexOf('STREAM') >= 0) cls = ' style="color:#3fb950"';
-      h += '<div'+cls+'>'+line+'</div>';
-    }
-    h += '</div>';
-    h += '<div style="padding:6px 14px;font-size:10px;color:#6e7681;border-top:1px solid #21262d">共 ' + total + ' 条，显示最近 ' + lines.length + ' 条</div>';
-  } else {
-    h = '<div class="em">暂无日志</div>';
+// ===== ROUTES =====
+function renderRoutes(){
+  var routes=(cfg&&cfg.routes)||[]
+  document.getElementById('routeCount').textContent=routes.length
+  if(!routes.length){document.getElementById('routesBody').innerHTML=''; document.getElementById('routesEmpty').style.display='block'; return}
+  document.getElementById('routesEmpty').style.display='none'
+  var h=''
+  for(var i=0;i<routes.length;i++){
+    var r=routes[i], pat=r.pattern||''
+    var tc='daily',tl='日常'
+    if(pat.indexOf('代码')>=0||pat.indexOf('部署')>=0||pat.indexOf('git')>=0){tc='code';tl='代码/运维'}
+    else if(pat.indexOf('分析')>=0||pat.indexOf('推理')>=0){tc='reason';tl='推理/分析'}
+    else if(pat.indexOf('图片')>=0||pat.indexOf('vision')>=0){tc='vision';tl='图片/视觉'}
+    h+='<tr>'
+    h+='<td><span class="tag '+tc+'">'+tl+'</span></td>'
+    h+='<td contenteditable onblur="onCellEdit('+i+',\'label\',this)" onkeydown="onCellKey(event,'+i+',\'label\',this)">'+esc(r.label)+'</td>'
+    h+='<td contenteditable onblur="onCellEdit('+i+',\'model\',this)" onkeydown="onCellKey(event,'+i+',\'model\',this)"><span class="mono">'+esc(r.model)+'</span></td>'
+    h+='<td contenteditable onblur="onCellEdit('+i+',\'provider\',this)" onkeydown="onCellKey(event,'+i+',\'provider\',this)"><span class="mono">'+esc(r.provider)+'</span></td>'
+    h+='<td><span class="mono">'+esc(r.key_env||'')+'</span></td>'
+    h+='<td><span class="mono" title="'+esc(r.endpoint||'')+'">'+esc(rn(r.endpoint||'',40))+'</span></td>'
+    h+='<td style="text-align:center"><button class="e-btn" onclick="openRoute('+i+')">编辑</button></td>'
+    h+='</tr>'
   }
-  document.getElementById('logsBox').innerHTML = h;
+  document.getElementById('routesBody').innerHTML=h
 }
-
-function renderBalances(data) {
-  if (!data) return;
-  var h = '';
-  // DeepSeek
-  if (data.deepseek && data.deepseek.balance_infos) {
-    var bi = data.deepseek.balance_infos[0] || {};
-    var bal = parseFloat(bi.total_balance || 0);
-    h += '<div class="stat"><div class="n" style="font-size:20px">¥' + bal.toFixed(2) + '</div><div class="l">DeepSeek 余额</div></div>';
-  } else if (data.deepseek && data.deepseek.error) {
-    h += '<div class="stat"><div class="n" style="font-size:14px;color:#f85149">?</div><div class="l">DeepSeek 余额</div></div>';
+function onCellKey(ev,i,f,el){if(ev.key==='Enter'){ev.preventDefault();el.blur()}if(ev.key==='Escape'){el.textContent=getRF(i,f);el.blur()}}
+function getRF(i,f){var r=(cfg&&cfg.routes&&cfg.routes[i])||{}; return r[f]||''}
+function onCellEdit(i,f,el){
+  var v=el.textContent.trim(), o=getRF(i,f)
+  if(v===o||!cfg||!cfg.routes||!cfg.routes[i])return
+  cfg.routes[i][f]=v; debSaveRoutes()
+}
+var saveTimer=null
+function debSaveRoutes(){if(saveTimer)clearTimeout(saveTimer); saveTimer=setTimeout(saveConfigFull,800)}
+function saveConfigFull(){
+  var d={
+    action:'update_defaults',
+    routes:cfg.routes,
+    default:{model:document.getElementById('def_model').value.trim(),provider:document.getElementById('def_provider').value.trim(),endpoint:document.getElementById('def_ep').value,key_env:document.getElementById('def_key').value},
+    fallback:{model:document.getElementById('fb_model').value.trim(),provider:document.getElementById('fb_provider').value.trim(),endpoint:document.getElementById('fb_ep').value,key_env:document.getElementById('fb_key').value},
+    precheck:{enabled:document.getElementById('pc_enabled').checked,model:document.getElementById('pc_model').value.trim(),provider:document.getElementById('pc_provider').value.trim(),endpoint:document.getElementById('pc_ep').value,key_env:document.getElementById('pc_key').value}
   }
-  // OpenRouter
-  if (data.openrouter && data.openrouter.limit_remaining !== undefined) {
-    var remain = data.openrouter.limit_remaining;
-    var limit = data.openrouter.limit || 0;
-    h += '<div class="stat"><div class="n" style="font-size:20px">$' + remain.toFixed(2) + '</div><div class="l">OpenRouter 剩余/$' + limit.toFixed(0) + '</div></div>';
-    var daily = data.openrouter.usage_daily || 0;
-    h += '<div class="stat"><div class="n" style="font-size:18px">$' + daily.toFixed(3) + '</div><div class="l">今日用量</div></div>';
-  } else if (data.openrouter && data.openrouter.error) {
-    h += '<div class="stat"><div class="n" style="font-size:14px;color:#f85149">?</div><div class="l">OpenRouter</div></div>';
+  api('POST','/admin/api/config',d).then(function(){toast('已保存')}).catch(function(e){toast(e.message,true)})
+}
+
+// ===== ROUTE MODAL =====
+function openRoute(idx){
+  routeEditIdx=idx; populateSelect('rm_key')
+  var r=(idx>=0&&cfg&&cfg.routes&&cfg.routes[idx])||{}
+  document.getElementById('rm_name').value=r.label||''
+  document.getElementById('rm_model').value=r.model||''
+  document.getElementById('rm_provider').value=r.provider||''
+  document.getElementById('rm_testInput').value=''; document.getElementById('rm_testResult').style.display='none'
+  document.getElementById('rm_deleteBtn').style.display=idx>=0?'inline-block':'none'
+  document.getElementById('routeModalTitle').textContent=idx>=0?'编辑路由':'新建路由'
+  var pat=r.pattern||'', usage='daily'
+  if(pat.indexOf('代码')>=0||pat.indexOf('部署')>=0||pat.indexOf('git')>=0)usage='code'
+  else if(pat.indexOf('分析')>=0||pat.indexOf('推理')>=0)usage='reason'
+  else if(pat.indexOf('图片')>=0||pat.indexOf('vision')>=0)usage='vision'
+  document.getElementById('rm_usage').value=usage
+  document.getElementById('rm_pattern').value=pat||USAGE_KEYWORDS[usage]||''
+  var ka=r.key_env||''
+  document.getElementById('rm_key').value=ka
+  document.getElementById('rm_ep').value=getKeyEndpoint(ka)
+  document.getElementById('rm_probeBtn').disabled=!ka
+  document.getElementById('rm_probeResult').style.display='none'
+  document.getElementById('routeModal').classList.add('show')
+}
+function saveRoute(){
+  var r={label:document.getElementById('rm_name').value.trim(),model:document.getElementById('rm_model').value.trim(),provider:document.getElementById('rm_provider').value.trim(),key_env:document.getElementById('rm_key').value,endpoint:document.getElementById('rm_ep').value,pattern:document.getElementById('rm_pattern').value.trim()}
+  if(!r.label){toast('请输入名称',true); return}
+  if(routeEditIdx>=0)cfg.routes[routeEditIdx]=r
+  else{if(!cfg.routes)cfg.routes=[]; cfg.routes.push(r)}
+  closeModal('routeModal'); saveConfigFull(); renderRoutes()
+}
+function deleteRoute(){
+  if(routeEditIdx<0||!confirm('确认删除？'))return
+  cfg.routes.splice(routeEditIdx,1); closeModal('routeModal'); saveConfigFull(); renderRoutes()
+}
+function onUsageChange(){
+  var u=document.getElementById('rm_usage').value, cur=document.getElementById('rm_pattern').value.trim()
+  if(!cur||Object.values(USAGE_KEYWORDS).indexOf(cur)>=0)document.getElementById('rm_pattern').value=USAGE_KEYWORDS[u]||''
+}
+function testRouteMatch(){
+  var pat=document.getElementById('rm_pattern').value.trim(), txt=document.getElementById('rm_testInput').value.trim(), res=document.getElementById('rm_testResult')
+  if(!pat||!txt){res.style.display='none'; return}
+  try{
+    var parts=pat.split(',').map(function(p){return p.trim()}).filter(Boolean)
+    var matched=parts.filter(function(p){try{return new RegExp(p).test(txt)}catch(e){return false}})
+    res.style.display='block'
+    if(matched.length){res.className='match-result yes'; res.innerHTML='✅ 命中: '+matched.join(', ')}
+    else{res.className='match-result no'; res.innerHTML='❌ 未命中任何关键词'}
+  }catch(e){res.style.display='none'}
+}
+
+// ===== KEYS =====
+function renderKeys(){
+  var ck=(cfg&&cfg.custom_keys)||{}, ek=(cfg&&cfg.env_keys)||{}, kb=document.getElementById('keysBody'), ke=document.getElementById('keysEmpty'), eb=document.getElementById('envKeysBody'), ee=document.getElementById('envKeysEmpty')
+  var names=Object.keys(ck)
+  if(!names.length){kb.innerHTML=''; ke.style.display='block'}else{ke.style.display='none'}
+  var h=''
+  for(var i=0;i<names.length;i++){
+    var k=names[i],v=ck[k]
+    h+='<div class="key-row"><div class="k-main"><div class="k-name">'+esc(k)+'</div><div class="k-ep">'+esc(rn(v.endpoint||'',60))+'</div><div class="k-val">'+maskKey(v.key)+'</div></div>'
+    h+='<div class="k-actions"><button onclick="syncKeyToProbe(\''+esc(k)+'\')">🔍</button><button onclick="openKeyEditModal(\''+esc(k)+'\')">编辑</button><button class="del" onclick="deleteKeyClick(\''+esc(k)+'\')">删除</button></div></div>'
   }
-  document.getElementById('balanceBox').innerHTML = h || '<div class="stat"><div class="n" style="font-size:14px;color:#6e7681">—</div><div class="l">余额信息</div></div>';
-}
-
-function esc(s) {
-  if (typeof s !== 'string') return s;
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-
-// Route modal
-function openRoute(idx) {
-  document.getElementById('rtTitle').textContent = idx >= 0 ? '编辑路由' : '新建路由';
-  document.getElementById('rtIdx').value = idx;
-  document.getElementById('rtDelBtn').style.display = idx >= 0 ? 'inline-flex' : 'none';
-
-  var sel = document.getElementById('rtKey');
-  var keyOpts = '<option value="">-- 选择 --</option>';
-  var k = cfg.keys || {};
-  for (var n in k) {
-    if (k.hasOwnProperty(n)) keyOpts += '<option value="keys:'+n+'">🔑 '+n+'</option>';
+  kb.innerHTML=h
+  var enames=Object.keys(ek)
+  if(!enames.length){eb.innerHTML=''; ee.style.display='block'}else{ee.style.display='none'}
+  var eh=''
+  for(var i=0;i<enames.length;i++){
+    var k=enames[i],v=ek[k]
+    eh+='<div class="key-row"><div class="k-main"><div class="k-name">'+esc(k)+' <span class="k-badge env">env</span></div><div class="k-ep">'+esc(rn(v.endpoint||'',60))+'</div><div class="k-val">'+esc(v.prefix||'')+'</div></div></div>'
   }
-  var ek = cfg.env_keys || {};
-  for (var n in ek) {
-    if (ek.hasOwnProperty(n)) keyOpts += '<option value="'+n+'">⚙️ '+n+'</option>';
+  eb.innerHTML=eh
+}
+function maskKey(s){if(!s)return''; if(s.length<12)return s.slice(0,2)+'***'+s.slice(-2); return s.slice(0,4)+'•••'+s.slice(-4)}
+function openKeyAddModal(){
+  keyEditName=null; document.getElementById('keyModalTitle').textContent='添加自定义密钥'
+  document.getElementById('km_name').value=''; document.getElementById('km_val').value=''; document.getElementById('km_ep').value=''; document.getElementById('km_deleteBtn').style.display='none'
+  document.getElementById('keyCascadeWarn').style.display='none'; document.getElementById('km_probeResult').style.display='none'; document.getElementById('keyModal').classList.add('show')
+}
+function openKeyEditModal(name){
+  keyEditName=name; document.getElementById('keyModalTitle').textContent='编辑密钥 · '+esc(name)
+  var v=cfg.custom_keys[name]
+  document.getElementById('km_name').value=name; document.getElementById('km_name').setAttribute('readonly',true)
+  document.getElementById('km_val').value=v?v.key:''; document.getElementById('km_ep').value=v?v.endpoint:''
+  document.getElementById('km_deleteBtn').style.display='inline-block'; document.getElementById('keyCascadeWarn').style.display='none'; document.getElementById('km_probeResult').style.display='none'
+  document.getElementById('keyModal').classList.add('show')
+}
+function saveKey(){
+  var name=document.getElementById('km_name').value.trim(), key=document.getElementById('km_val').value.trim(), ep=document.getElementById('km_ep').value.trim()
+  if(!name){toast('请输入别名',true);return} if(!key){toast('请输入密钥',true);return} if(!ep){toast('请输入端点URL',true);return}
+  api('POST','/admin/api/keys/add',{name:name,key:key,endpoint:ep}).then(function(){toast('密钥已保存'); closeModal('keyModal'); document.getElementById('km_name').removeAttribute('readonly'); fetchAll()}).catch(function(e){toast(e.message,true)})
+}
+function deleteKeyClick(name){
+  pendingDeleteKey=name
+  api('POST','/admin/api/keys/delete',{name:name}).then(function(d){
+    document.getElementById('delKeyMsg').innerHTML='确认删除密钥 <strong>'+esc(name)+'</strong>？'
+    var listEl=document.getElementById('delKeyAffectedList'),warnEl=document.getElementById('delKeyAffected')
+    listEl.innerHTML=''; var affected=d.affected||[]
+    if(affected.length){
+      warnEl.style.display='block'
+      affected.forEach(function(a){var li=document.createElement('li'); li.textContent=(a.type==='route'?'路由: ':'配置: ')+a.name; listEl.appendChild(li)})
+    }else{warnEl.style.display='none'}
+    document.getElementById('delKeyConfirmModal').classList.add('show')
+  }).catch(function(e){toast(e.message,true)})
+}
+function confirmDeleteKey(){
+  if(!pendingDeleteKey)return
+  api('POST','/admin/api/keys/delete',{name:pendingDeleteKey}).then(function(){toast('密钥已删除'); pendingDeleteKey=null; closeModal('delKeyConfirmModal'); fetchAll()}).catch(function(e){toast(e.message,true)})
+}
+function deleteCurrentKey(){if(!keyEditName)return; closeModal('keyModal'); deleteKeyClick(keyEditName)}
+function syncKeyToProbe(name){openKeyEditModal(name); setTimeout(function(){probeModels('km')},300)}
+
+// ===== CONFIG =====
+function renderConfig(){
+  if(!cfg)return
+  var d=cfg.default||{}, fb=cfg.fallback||{}, pc=cfg.precheck||{}
+  populateSelect('def_key'); populateSelect('fb_key'); populateSelect('pc_key')
+  document.getElementById('def_model').value=d.model||''; document.getElementById('def_provider').value=d.provider||''
+  document.getElementById('def_key').value=d.key_env||''; document.getElementById('def_ep').value=getKeyEndpoint(d.key_env)
+  var db=document.getElementById('def_probeBtn'); if(db)db.disabled=!d.key_env
+  document.getElementById('def_probeResult').style.display='none'
+  document.getElementById('fb_model').value=fb.model||''; document.getElementById('fb_provider').value=fb.provider||''
+  document.getElementById('fb_key').value=fb.key_env||''; document.getElementById('fb_ep').value=getKeyEndpoint(fb.key_env)
+  document.getElementById('pc_model').value=pc.model||''; document.getElementById('pc_provider').value=pc.provider||''
+  document.getElementById('pc_key').value=pc.key_env||''; document.getElementById('pc_ep').value=getKeyEndpoint(pc.key_env)
+  document.getElementById('pc_enabled').checked=pc.enabled!==false
+}
+
+function saveAllCfg(){saveConfigFull()}
+
+// ===== LOGS =====
+function renderLogs(data){
+  if(!data)return
+  allLogs=data.lines||[]; document.getElementById('logMeta').textContent='共 '+(data.total||0)+' 条，显示 '+allLogs.length+' 条'
+  applyLogFilter()
+}
+function applyLogFilter(){
+  var h='',count=0
+  for(var i=0;i<allLogs.length;i++){
+    var line=allLogs[i],cls=''
+    if(line.indexOf('ERROR')>=0)cls='err'
+    else if(line.indexOf('FALLBACK')>=0)cls='fbk'
+    else if(line.indexOf('ROUTE')>=0)cls='route'
+    else if(line.indexOf('CALL')>=0||line.indexOf('STREAM')>=0)cls='ok'
+    if(logFilter==='error'&&cls!=='err')continue
+    if(logFilter==='fallback'&&cls!=='fbk')continue
+    if(logFilter==='route'&&cls!=='route')continue
+    if(logFilter==='call'&&cls!=='ok')continue
+    h+='<div class="line '+cls+'">'+esc(line)+'</div>'; count++
   }
-  sel.innerHTML = keyOpts;
-
-  if (idx >= 0 && cfg.routes && cfg.routes[idx]) {
-    var r = cfg.routes[idx];
-    document.getElementById('rtLabel').value = r.label || '';
-    var pat = r.pattern ? (r.pattern.source || r.pattern) : '';
-    document.getElementById('rtPattern').value = pat;
-    document.getElementById('rtModel').value = r.model || '';
-    document.getElementById('rtProv').value = r.provider || '';
-    document.getElementById('rtEp').value = r.endpoint || '';
-    sel.value = r.key_env || '';
-
-    var p = detectPurpose(r.label, r.model, r.provider, pat);
-    var radio = document.querySelector('input[name="p"][value="'+p+'"]');
-    if (radio) radio.checked = true;
-  } else {
-    document.getElementById('rtLabel').value = '';
-    document.getElementById('rtPattern').value = '';
-    document.getElementById('rtModel').value = '';
-    document.getElementById('rtProv').value = '';
-    document.getElementById('rtEp').value = '';
-    sel.value = '';
-    document.getElementById('pc').checked = true;
-  }
-  document.getElementById('rtModal').classList.add('on');
-}
-
-function onPurposeChange(e) {
-  var val = e.target.value;
-  var pat = PP[val] || '';
-  if (pat && !document.getElementById('rtPattern').value) {
-    document.getElementById('rtPattern').value = pat;
-  }
-}
-
-function saveRoute() {
-  var idx = parseInt(document.getElementById('rtIdx').value);
-  var route = {
-    label: document.getElementById('rtLabel').value.trim(),
-    pattern: document.getElementById('rtPattern').value.trim(),
-    model: document.getElementById('rtModel').value.trim(),
-    provider: document.getElementById('rtProv').value.trim(),
-    endpoint: document.getElementById('rtEp').value.trim(),
-    key_env: document.getElementById('rtKey').value
-  };
-  if (!route.label) { toast('请填写路由名称', true); return; }
-  if (!route.pattern) { toast('请填写匹配关键词', true); return; }
-  if (!route.model || !route.endpoint) { toast('请填写模型 ID 和端点', true); return; }
-  var body = {action: 'upsert_route', route: route};
-  if (idx >= 0) body.index = idx;
-  api('POST', '/admin/api/config', body).then(function() {
-    closeModal('rtModal');
-    return fetchAll();
-  }).then(function() {
-    toast('✅ 已保存');
-  }).catch(function(e) { toast(e.message, true); });
-}
-
-function delRoute() {
-  var idx = parseInt(document.getElementById('rtIdx').value);
-  if (!confirm('确认删除此路由规则？')) return;
-  api('POST', '/admin/api/config', {action: 'delete_route', index: idx}).then(function() {
-    closeModal('rtModal');
-    return fetchAll();
-  }).then(function() { toast('已删除'); }).catch(function(e) { toast(e.message, true); });
-}
-
-// Keys
-function openKey() { document.getElementById('keyModal').classList.add('on'); }
-
-function saveKey() {
-  var name = document.getElementById('keyName').value.trim();
-  var val = document.getElementById('keyVal').value.trim();
-  if (!name) { toast('请填写密钥名称', true); return; }
-  if (!val) { toast('请填写 API 密钥', true); return; }
-  api('POST', '/admin/api/config', {action: 'upsert_key', key_name: name, key_value: val}).then(function() {
-    closeModal('keyModal');
-    document.getElementById('keyName').value = '';
-    document.getElementById('keyVal').value = '';
-    return fetchAll();
-  }).then(function() { toast('✅ 已保存'); }).catch(function(e) { toast(e.message, true); });
-}
-
-function delKey(name) {
-  if (!confirm('确认删除密钥 "'+name+'"？不可恢复。')) return;
-  api('POST', '/admin/api/config', {action: 'delete_key', key_name: name}).then(function() {
-    return fetchAll();
-  }).then(function() { toast('已删除'); }).catch(function(e) { toast(e.message, true); });
-}
-
-function saveCfg() {
-  api('POST', '/admin/api/config', {
-    action: 'update_defaults',
-    default: {
-      model: document.getElementById('cdm').value.trim(),
-      provider: document.getElementById('cdp').value.trim(),
-      endpoint: document.getElementById('cde').value.trim(),
-      key_env: document.getElementById('cdk').value.trim()
-    },
-    fallback: {
-      model: document.getElementById('cfm').value.trim(),
-      provider: document.getElementById('cfp').value.trim(),
-      endpoint: document.getElementById('cfe').value.trim(),
-      key_env: document.getElementById('cfk').value.trim()
-    },
-    precheck: {
-      enabled: document.getElementById('cpe').value === 'true',
-      model: document.getElementById('cpm').value.trim(),
-      provider: document.getElementById('cpp').value.trim(),
-      endpoint: document.getElementById('cpep').value.trim()
-    }
-  }).then(function() {
-    return fetchAll();
-  }).then(function() { toast('✅ 已保存'); }).catch(function(e) { toast(e.message, true); });
-}
-
-function doReload() {
-  api('POST', '/admin/api/reload').then(function() {
-    return fetchAll();
-  }).then(function() { toast('⚡ 已重载'); }).catch(function(e) { toast(e.message, true); });
-}
-
-function closeModal(id) {
-  document.getElementById(id).classList.remove('on');
-}
-
-// Auto login
-if (token) {
-  document.getElementById('loginScreen').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-  fetchAll();
+  if(!count)h='<div class="line" style="color:var(--text2);text-align:center;padding:30px">无匹配日志</div>'
+  document.getElementById('logsBody').innerHTML=h
+  if(document.getElementById('autoScroll').checked){var lb=document.getElementById('logsBody'); lb.scrollTop=lb.scrollHeight}
 }
 </script>
 </body>

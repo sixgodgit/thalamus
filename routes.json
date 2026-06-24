@@ -39,11 +39,9 @@
   },
   "precheck": {
     "enabled": true,
-    "model": "deepseek-chat",
+    "model": "deepseek v4 flash",
     "provider": "deepseek",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
-    "key_env": "DEEPSEEK_API_KEY",
-    "max_tokens": 512,
-    "temperature": 0.3
+    "key_env": "DEEPSEEK_API_KEY"
   }
 }

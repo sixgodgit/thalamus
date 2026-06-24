@@ -114,15 +114,23 @@ PRECHECK_KEY_ENV = DEFAULT_KEY_ENV
 PRECHECK_MAX_TOKENS = 512
 PRECHECK_TEMPERATURE = 0.3
 
-# 密钥存储
-KEYS = {}
+# 密钥存储 — 统一管理 key + endpoint
+# keys.json 格式: {"ALIAS": {"key": "sk-...", "endpoint": "https://..."}}
+KEYS = {}  # alias -> {"key": str, "endpoint": str}
 
 def _load_keys():
     global KEYS
     try:
         if KEYS_PATH.exists():
             with open(KEYS_PATH) as f:
-                KEYS = json.load(f)
+                raw = json.load(f)
+            KEYS = {}
+            for alias, val in raw.items():
+                if isinstance(val, dict):
+                    KEYS[alias] = val
+                else:
+                    # Legacy: {"alias": "sk-..."} — migrate on load
+                    KEYS[alias] = {"key": val, "endpoint": "https://api.deepseek.com/v1/chat/completions"}
             log(f"Loaded {len(KEYS)} API keys from {KEYS_PATH}")
         else:
             KEYS = {}
@@ -131,11 +139,31 @@ def _load_keys():
         KEYS = {}
 
 def _resolve_key(key_env: str) -> str:
-    if key_env and key_env.startswith("keys:"):
-        name = key_env[5:]
-        return KEYS.get(name, "")
-    if key_env:
-        return os.environ.get(key_env, "")
+    """Resolve key_env to an (api_key, base_url) tuple.
+    
+    key_env can be:
+    - A KEYS alias: resolves to KEYS[alias]["key"]
+    - An environment variable name: resolves to os.environ[key_env]
+    
+    Returns empty string if not found.
+    """
+    if not key_env:
+        return ""
+    # First check KEYS dict (for key aliases)
+    if key_env in KEYS:
+        return KEYS[key_env]["key"]
+    # Then fallback to environment variable
+    return os.environ.get(key_env, "")
+
+def _resolve_endpoint(key_env: str) -> str:
+    """Resolve key_env to an endpoint URL.
+    
+    Prefers KEYS dict, falls back to empty string (caller supplies default).
+    """
+    if not key_env:
+        return ""
+    if key_env in KEYS:
+        return KEYS[key_env].get("endpoint", "")
     return ""
 
 def _get_admin_password() -> str:
@@ -1258,13 +1286,21 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             cfg = json.loads(ROUTES_PATH.read_text())
             # Add version
             cfg["version"] = "4.0.0"
-            # Add keys (masked for env vars, full for custom keys)
-            cfg["keys"] = dict(KEYS)
-            # Add env var key names that exist
+            # Split keys into custom (manually added) and env (from environment)
+            custom_keys = {}
             env_keys = {}
-            for env_name in ["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "XIAOMI_API_KEY"]:
-                if os.environ.get(env_name):
-                    env_keys[env_name] = "sk-****" + os.environ.get(env_name, "")[-4:]
+            for k, v in KEYS.items():
+                if os.environ.get(k):
+                    env_keys[k] = {
+                        "endpoint": v.get("endpoint", ""),
+                        "prefix": ("sk-****" + (os.environ.get(k, "")[-4:] or v.get("key", "")[-4:])),
+                    }
+                else:
+                    custom_keys[k] = {
+                        "key": v.get("key", ""),
+                        "endpoint": v.get("endpoint", ""),
+                    }
+            cfg["custom_keys"] = custom_keys
             cfg["env_keys"] = env_keys
             self._send_json(200, cfg)
         elif self.path in ("/admin/api/stats", "/admin/api/stats/"):
@@ -1352,100 +1388,17 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self._send_error(401, "Unauthorized")
             return
 
-        if path in ("/admin/api/config", "/admin/api/config/"):
-            action = body.get("action", "")
-            try:
-                cfg = json.loads(ROUTES_PATH.read_text())
-                if action == "upsert_route":
-                    route = body.get("route", {})
-                    pattern_raw = route.get("pattern", "")
-                    # Validate regex
-                    try:
-                        re.compile(pattern_raw)
-                    except re.error as e:
-                        self._send_error(400, f"Invalid regex pattern: {e}")
-                        return
-                    entry = {
-                        "label": route.get("label", ""),
-                        "pattern": pattern_raw,
-                        "model": route.get("model", ""),
-                        "provider": route.get("provider", ""),
-                        "endpoint": route.get("endpoint", ""),
-                        "key_env": route.get("key_env", ""),
-                    }
-                    routes = cfg["routes"]
-                    idx = body.get("index")
-                    if idx is not None and 0 <= idx < len(routes):
-                        routes[idx] = entry
-                    else:
-                        routes.append(entry)
-                    cfg["routes"] = routes
-                elif action == "delete_route":
-                    idx = body.get("index", -1)
-                    routes = cfg.get("routes", [])
-                    if 0 <= idx < len(routes):
-                        routes.pop(idx)
-                    cfg["routes"] = routes
-                elif action == "upsert_key":
-                    name = body.get("key_name", "")
-                    value = body.get("key_value", "")
-                    if not name or not value:
-                        self._send_error(400, "Missing key_name or key_value")
-                        return
-                    KEYS[name] = value
-                    with open(KEYS_PATH, "w") as f:
-                        json.dump(KEYS, f, indent=2)
-                    log(f"Admin: saved API key '{name}'")
-                    self._send_json(200, {"status": "ok", "keys": list(KEYS.keys())})
-                    return
-                elif action == "delete_key":
-                    name = body.get("key_name", "")
-                    if name in KEYS:
-                        KEYS.pop(name)
-                        with open(KEYS_PATH, "w") as f:
-                            json.dump(KEYS, f, indent=2)
-                        log(f"Admin: deleted API key '{name}'")
-                    self._send_json(200, {"status": "ok"})
-                    return
-                elif action == "update_defaults":
-                    if "default" in body:
-                        d = body["default"]
-                        cfg["default"] = {
-                            "model": d.get("model", cfg["default"]["model"]),
-                            "provider": d.get("provider", cfg["default"]["provider"]),
-                            "endpoint": d.get("endpoint", cfg["default"]["endpoint"]),
-                            "key_env": d.get("key_env", cfg["default"]["key_env"]),
-                        }
-                    if "fallback" in body:
-                        fb = body["fallback"]
-                        cfg["fallback"] = {
-                            "model": fb.get("model", cfg["fallback"]["model"]),
-                            "provider": fb.get("provider", cfg["fallback"]["provider"]),
-                            "endpoint": fb.get("endpoint", cfg["fallback"]["endpoint"]),
-                            "key_env": fb.get("key_env", cfg["fallback"]["key_env"]),
-                        }
-                    if "precheck" in body:
-                        pc = body["precheck"]
-                        cfg["precheck"] = {
-                            "enabled": pc.get("enabled", cfg["precheck"]["enabled"]),
-                            "model": pc.get("model", cfg["precheck"]["model"]),
-                            "provider": pc.get("provider", cfg["precheck"]["provider"]),
-                            "endpoint": pc.get("endpoint", cfg["precheck"]["endpoint"]),
-                            "key_env": pc.get("key_env", cfg["precheck"]["key_env"]),
-                        }
-                else:
-                    self._send_error(400, f"Unknown action: {action}")
-                    return
+        # ── 密钥管理 API ──
+        if path in ("/admin/api/keys/add", "/admin/api/keys/add/"):
+            return self._handle_key_add(body)
+        if path in ("/admin/api/keys/delete", "/admin/api/keys/delete/"):
+            return self._handle_key_delete(body)
+        if path in ("/admin/api/keys/probe", "/admin/api/keys/probe/"):
+            return self._handle_key_probe(body)
 
-                # Write routes.json
-                with open(ROUTES_PATH, "w") as f:
-                    json.dump(cfg, f, indent=2, ensure_ascii=False)
-                log(f"Admin: configuration updated (action={action})")
-                self._send_json(200, {"status": "ok"})
-            except Exception as e:
-                log(f"Admin config error: {e}")
-                self._send_error(500, str(e))
-            return
+        # ── 路由/系统配置 API (旧版嵌套 action 兼容) ──
+        if path in ("/admin/api/config", "/admin/api/config/"):
+            return self._handle_config_update(body)
 
         if path in ("/admin/api/reload", "/admin/api/reload/"):
             try:
@@ -1459,6 +1412,179 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             return
 
         self._send_error(404, "Not found")
+
+    # ─── 密钥 CRUD ───
+
+    def _handle_key_add(self, body: dict):
+        name = body.get("name", "").strip()
+        key = body.get("key", "").strip()
+        endpoint = body.get("endpoint", "").strip()
+        if not name or not key:
+            self._send_error(400, "Missing required fields: name, key")
+            return
+        KEYS[name] = {"key": key, "endpoint": endpoint or "https://api.deepseek.com/v1/chat/completions"}
+        with open(KEYS_PATH, "w") as f:
+            json.dump(KEYS, f, indent=2)
+        log(f"Admin: saved API key '{name}'")
+        self._send_json(200, {"status": "ok", "keys": list(KEYS.keys())})
+
+    def _handle_key_delete(self, body: dict):
+        name = body.get("name", "").strip()
+        if not name or name not in KEYS:
+            self._send_error(404, f"Key '{name}' not found")
+            return
+        # Check cascade — which routes/configs use this key?
+        affected = []
+        try:
+            cfg = json.loads(ROUTES_PATH.read_text())
+            for i, r in enumerate(cfg.get("routes", [])):
+                if r.get("key_env") == name:
+                    affected.append({"type": "route", "name": r.get("label", f"route#{i}")})
+            for section in ["default", "fallback", "precheck"]:
+                sec = cfg.get(section, {})
+                if sec.get("key_env") == name:
+                    affected.append({"type": "config", "name": section})
+        except Exception:
+            pass
+
+        del KEYS[name]
+        with open(KEYS_PATH, "w") as f:
+            json.dump(KEYS, f, indent=2)
+        log(f"Admin: deleted API key '{name}'")
+        self._send_json(200, {"status": "ok", "affected": affected})
+
+    def _handle_key_probe(self, body: dict):
+        """Probe a key's endpoint for available models. 60s throttle."""
+        name = body.get("name", "").strip()
+        if not name or name not in KEYS:
+            self._send_error(404, f"Key '{name}' not found")
+            return
+        entry = KEYS[name]
+        endpoint_base = entry["endpoint"].replace("/chat/completions", "").replace("/v1", "")
+        if endpoint_base.endswith("/"):
+            endpoint_base = endpoint_base[:-1]
+        endpoint_base += "/v1/models"
+
+        # Throttle
+        now = time.time()
+        cache_key = f"_probe_{name}"
+        last_probe = getattr(_spend, cache_key, 0)
+        if now - last_probe < 60:
+            self._send_error(429, "Probe cooldown (60s). Please wait.")
+            return
+
+        try:
+            req = urllib.request.Request(endpoint_base)
+            req.add_header("Authorization", f"Bearer {entry['key']}")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            models = []
+            for m in data.get("data", []):
+                mid = m.get("id", "")
+                if mid:
+                    models.append({"id": mid, "object": m.get("object", "model")})
+            setattr(_spend, cache_key, now)
+            self._send_json(200, {"models": models})
+        except Exception as e:
+            log(f"Probe failed for '{name}': {e}")
+            self._send_error(502, f"Probe failed: {e}")
+
+    # ─── 路由/系统配置 ───
+
+    def _handle_config_update(self, body: dict):
+        action = body.get("action", "")
+        try:
+            cfg = json.loads(ROUTES_PATH.read_text())
+            if action == "upsert_route":
+                route = body.get("route", {})
+                pattern_raw = route.get("pattern", "")
+                # Validate regex
+                try:
+                    re.compile(pattern_raw)
+                except re.error as e:
+                    self._send_error(400, f"Invalid regex pattern: {e}")
+                    return
+                entry = {
+                    "label": route.get("label", ""),
+                    "pattern": pattern_raw,
+                    "model": route.get("model", ""),
+                    "provider": route.get("provider", ""),
+                    "endpoint": route.get("endpoint", ""),
+                    "key_env": route.get("key_env", ""),
+                }
+                routes = cfg["routes"]
+                idx = body.get("index")
+                if idx is not None and 0 <= idx < len(routes):
+                    routes[idx] = entry
+                else:
+                    routes.append(entry)
+                cfg["routes"] = routes
+            elif action == "delete_route":
+                idx = body.get("index", -1)
+                routes = cfg.get("routes", [])
+                if 0 <= idx < len(routes):
+                    routes.pop(idx)
+                cfg["routes"] = routes
+            elif action == "upsert_key":
+                name = body.get("key_name", "")
+                value = body.get("key_value", "")
+                endpoint = body.get("endpoint", "")
+                if not name or not value:
+                    self._send_error(400, "Missing key_name or key_value")
+                    return
+                KEYS[name] = {"key": value, "endpoint": endpoint or "https://api.deepseek.com/v1/chat/completions"}
+                with open(KEYS_PATH, "w") as f:
+                    json.dump(KEYS, f, indent=2)
+                log(f"Admin: saved API key '{name}'")
+                self._send_json(200, {"status": "ok", "keys": list(KEYS.keys())})
+                return
+            elif action == "delete_key":
+                name = body.get("key_name", "")
+                if name in KEYS:
+                    KEYS.pop(name)
+                    with open(KEYS_PATH, "w") as f:
+                        json.dump(KEYS, f, indent=2)
+                    log(f"Admin: deleted API key '{name}'")
+                self._send_json(200, {"status": "ok"})
+                return
+            elif action == "update_defaults":
+                if "default" in body:
+                    d = body["default"]
+                    cfg["default"] = {
+                        "model": d.get("model", cfg["default"]["model"]),
+                        "provider": d.get("provider", cfg["default"]["provider"]),
+                        "endpoint": d.get("endpoint", cfg["default"]["endpoint"]),
+                        "key_env": d.get("key_env", cfg["default"]["key_env"]),
+                    }
+                if "fallback" in body:
+                    fb = body["fallback"]
+                    cfg["fallback"] = {
+                        "model": fb.get("model", cfg["fallback"]["model"]),
+                        "provider": fb.get("provider", cfg["fallback"]["provider"]),
+                        "endpoint": fb.get("endpoint", cfg["fallback"]["endpoint"]),
+                        "key_env": fb.get("key_env", cfg["fallback"]["key_env"]),
+                    }
+                if "precheck" in body:
+                    pc = body["precheck"]
+                    cfg["precheck"] = {
+                        "enabled": pc.get("enabled", cfg["precheck"]["enabled"]),
+                        "model": pc.get("model", cfg["precheck"]["model"]),
+                        "provider": pc.get("provider", cfg["precheck"]["provider"]),
+                        "endpoint": pc.get("endpoint", cfg["precheck"]["endpoint"]),
+                        "key_env": pc.get("key_env", cfg["precheck"]["key_env"]),
+                    }
+            else:
+                self._send_error(400, f"Unknown action: {action}")
+                return
+
+            # Write routes.json
+            with open(ROUTES_PATH, "w") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            log(f"Admin: configuration updated (action={action})")
+            self._send_json(200, {"status": "ok"})
+        except Exception as e:
+            log(f"Admin config error: {e}")
+            self._send_error(500, str(e))
 
     def log_message(self, format, *args):
         pass  # 静默内置 HTTP 日志
