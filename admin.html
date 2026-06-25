@@ -644,11 +644,12 @@ function showProbeModels(el,mi,models,keyAlias){
   var h=''
   models.forEach(function(m){
     var tags=(m.tags||[]).map(function(t){var lb=TAG_LABELS[t]||t; var cl=TAG_COLORS[t]||'var(--text2)'; return '<span style="display:inline-block;padding:0 6px;margin:0 2px;border-radius:3px;font-size:9px;background:'+cl+'20;color:'+cl+';font-weight:500">'+lb+'</span>'}).join('')
-    h+='<div class="m-card" onclick="pickModel('+JSON.stringify(m.id)+','+JSON.stringify(keyAlias)+',''+mi.id+'')"><span class="m-id">'+esc(m.id)+'</span> '+tags+'</div>'
+    h+='<div class="m-card" data-mid="'+esc(m.id)+'" data-ka="'+esc(keyAlias)+'" data-mi="'+mi.id+'" onclick="pickModel(this)"><span class="m-id">'+esc(m.id)+'</span> '+tags+'</div>'
   })
   el.innerHTML=h+'<div style="margin-top:4px;color:var(--text2);font-size:10px">点击卡片自动填入</div>'
 }
-function pickModel(mid,ka,miId){
+function pickModel(el){
+  var mid=el.getAttribute('data-mid'), ka=el.getAttribute('data-ka'), miId=el.getAttribute('data-mi')
   document.getElementById(miId).value=mid
   var k=KEYS_SELECTOR[ka]
   if(k){
@@ -657,7 +658,7 @@ function pickModel(mid,ka,miId){
     if(prEl)prEl.value=prov
   }
   document.querySelectorAll('.probe-models .m-card').forEach(function(c){c.classList.remove('sel')})
-  event.target.closest('.m-card').classList.add('sel')
+  el.classList.add('sel')
 }
 function probeKeyAddModal(){
   var name=document.getElementById('km_name').value.trim(), key=document.getElementById('km_val').value.trim(), ep=document.getElementById('km_ep').value.trim()
