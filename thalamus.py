@@ -1091,10 +1091,27 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             })
         elif self.path.startswith("/admin"):
             self._handle_admin_get()
+        elif self.path in ("/v1/models", "/v1/models/"):
+            # Return OpenAI-compatible model list for context-length discovery
+            models = []
+            for r in ROUTES:
+                models.append({
+                    "id": r[1],
+                    "object": "model",
+                    "created": int(START_TIME),
+                    "owned_by": r[2],
+                    "max_tokens": 1048576,  # 1M context
+                })
+            # Also add common models
+            seen = {m["id"] for m in models}
+            for mid, prov in [("deepseek-v4-flash", "deepseek"), ("deepseek-v4-pro", "deepseek")]:
+                if mid not in seen:
+                    models.append({"id": mid, "object": "model", "created": 1740000000, "owned_by": prov, "max_tokens": 1048576})
+            self._send_json(200, {"data": models, "object": "list"})
         else:
             self._send_json(200, {
                 "name": "thalamus",
-                "version": "3.0.0",
+                "version": "4.0.0",
                 "endpoints": {
                     "/v1/chat/completions": "OpenAI-compatible proxy (streaming + non-streaming)",
                     "/task": "Legacy task endpoint",

@@ -1,28 +1,36 @@
 {
   "routes": [
     {
-      "label": "MiMo 2.5 Pro",
-      "pattern": "(代码|编程|写.*程序|写.*代码|写.*函数|写.*算法|写.*类|写.*模块|实现.*功能|修.*bug|重构|部署|deploy|运维|server|服务器|nginx|docker|systemctl|ssh|git\\s|commit|PR|pull.request|config|配置.*文件|yaml|json.*修改|shell|bash|脚本|修复|报错|error|exception|traceback|日志.*分析|排查|调试|debug|cron|备份|快照|kill|杀.*进程|重启.*服务|安装|apt|pip|npm|yum|dnf|编译|make|cmake|gcc|clang|rpm|dpkg|测试|test|unittest|pytest|mock|stub|benchmark)",
-      "model": "mimo-v2.5-pro",
-      "provider": "xiaomi",
-      "endpoint": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
-      "key_env": "mimo"
+      "label": "ds",
+      "model": "deepseek-v4-flash",
+      "provider": "ds",
+      "key_env": "deepseek",
+      "endpoint": "https://api.deepseek.com/v1/chat/completions",
+      "pattern": ""
     },
     {
-      "label": "OpenRouter Auto",
-      "pattern": "(分析|对比|比较|推理|为什么|原因|根因|深度|论证|评估|策略|方案|设计.*架构|优缺点|权衡|决策|审查|审计|review|评审|代码审查)",
-      "model": "openrouter/auto",
-      "provider": "openrouter",
+      "label": "claude",
+      "model": "anthropic/claude-opus-4.7-fast",
+      "provider": "anthropic",
+      "key_env": "openrouter",
       "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-      "key_env": "openrouter"
+      "pattern": "分析,对比,比较,推理,为什么,原因,根因,深度,论证,评估,策略,方案,设计架构,优缺点,权衡,决策,审查,审计,review,评审"
     },
     {
-      "label": "MiMo v2 Omni",
-      "pattern": "(图片|截图|照片|图像|看图|OCR|识别.*图|vision|视觉|多媒体)",
-      "model": "mimo-v2-omni",
-      "provider": "xiaomi",
-      "endpoint": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
-      "key_env": "mimo"
+      "label": "ds pro",
+      "model": "deepseek-v4-pro",
+      "provider": "ds",
+      "key_env": "deepseek",
+      "endpoint": "https://api.deepseek.com/v1/chat/completions",
+      "pattern": "代码,编程,写程序,重构,部署,deploy,运维,server,nginx,docker,systemctl,ssh,git,commit,PR,config,shell,bash,脚本,修复,报错,error,exception,traceback,日志分析,调试,debug,cron,备份,安装,apt,pip,npm,编译,make,测试,test,pytest"
+    },
+    {
+      "label": "gemini",
+      "model": "~google/gemini-flash-latest",
+      "provider": "~google",
+      "key_env": "openrouter",
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "pattern": "图片,截图,照片,图像,看图,OCR,识别图,vision,视觉,多媒体"
     }
   ],
   "default": {
