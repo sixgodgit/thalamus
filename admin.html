@@ -120,6 +120,11 @@ td[contenteditable]:focus{background:rgba(59,130,246,.1);box-shadow:0 0 0 1px va
 .probe-models .m{display:inline-block;padding:2px 8px;margin:2px;border-radius:4px;background:rgba(59,130,246,.1);color:var(--text);cursor:pointer;font-size:11px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;transition:background .1s}
 .probe-models .m:hover{background:rgba(59,130,246,.3)}
 .probe-models .m.sel{background:var(--accent);color:#fff}
+.probe-models .m-card{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin:4px 0;border:1px solid var(--glass-border);border-radius:var(--r-sm);background:var(--glass);cursor:pointer;transition:background .12s}
+.probe-models .m-card:hover{background:var(--glass-hover);border-color:var(--accent)}
+.probe-models .m-card.sel{border-color:var(--accent);background:rgba(99,102,241,.1)}
+.probe-models .m-card .m-id{font-family:JetBrains Mono,monospace;font-size:12px}
+.probe-models .m-card .m-tags{display:flex;gap:2px;flex-wrap:wrap}
 .logs-wrap{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius);overflow:hidden}
 .logs-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--glass-border)}
 .logs-header .left{display:flex;align-items:center;gap:10px}
@@ -623,30 +628,36 @@ function probeModels(ctx) {
   if(!KEYS_SELECTOR[keyAlias]){toast('密钥不存在',true); return}
   var k=KEYS_SELECTOR[keyAlias]; if(!k.endpoint){toast('密钥没有端点',true); return}
   if(PROBE_CACHE[keyAlias]&&(Date.now()-PROBE_CACHE[keyAlias].ts)<60000){
-    showProbeModels(resultEl,modelInput,PROBE_CACHE[keyAlias].models); return
+    showProbeModels(resultEl,modelInput,PROBE_CACHE[keyAlias].models,keyAlias); return
   }
   btn.disabled=true; resultEl.style.display='block'; resultEl.innerHTML='<span style="color:var(--text2)">探测中...</span>'
   api('POST','/admin/api/keys/probe',{name:keyAlias}).then(function(d){
     PROBE_CACHE[keyAlias]={models:d.models,ts:Date.now()}
-    showProbeModels(resultEl,modelInput,d.models); btn.disabled=false
+    showProbeModels(resultEl,modelInput,d.models,keyAlias); btn.disabled=false
   }).catch(function(e){resultEl.innerHTML='<span style="color:var(--red)">探测失败: '+esc(e.message)+'</span>'; btn.disabled=false})
 }
-function showProbeModels(el,mi,models){
+function showProbeModels(el,mi,models,keyAlias){
   el.style.display='block'
   if(!models||!models.length){el.innerHTML='<span style="color:var(--text2)">无可用模型</span>'; return}
   var TAG_LABELS={multi:'🖼️多模态',reason:'🧠推理',code:'💻代码',fast:'⚡轻量'}
   var TAG_COLORS={multi:'#a855f7',reason:'#3b82f6',code:'#22c55e',fast:'#6e7681'}
   var h=''
   models.forEach(function(m){
-    var tags=(m.tags||[]).map(function(t){var lb=TAG_LABELS[t]||t; var cl=TAG_COLORS[t]||'var(--text2)'; return '<span style="display:inline-block;padding:0 5px;margin:0 2px;border-radius:3px;font-size:9px;background:'+cl+'20;color:'+cl+'">'+lb+'</span>'}).join('')
-    h+='<span class="m" onclick="pickModel(this,'+"'"+mi.id+"'"+')">'+esc(m.id)+' '+tags+'</span> '
+    var tags=(m.tags||[]).map(function(t){var lb=TAG_LABELS[t]||t; var cl=TAG_COLORS[t]||'var(--text2)'; return '<span style="display:inline-block;padding:0 6px;margin:0 2px;border-radius:3px;font-size:9px;background:'+cl+'20;color:'+cl+';font-weight:500">'+lb+'</span>'}).join('')
+    h+='<div class="m-card" onclick="pickModel('+JSON.stringify(m.id)+','+JSON.stringify(keyAlias)+',''+mi.id+'')"><span class="m-id">'+esc(m.id)+'</span> '+tags+'</div>'
   })
-  el.innerHTML=h+'<div style="margin-top:4px;color:var(--text2);font-size:10px">点击模型名自动填入</div>'
+  el.innerHTML=h+'<div style="margin-top:4px;color:var(--text2);font-size:10px">点击卡片自动填入</div>'
 }
-function pickModel(el,id){
-  document.getElementById(id).value=el.textContent.trim()
-  document.querySelectorAll('.probe-models .m').forEach(function(m){m.classList.remove('sel')})
-  el.classList.add('sel')
+function pickModel(mid,ka,miId){
+  document.getElementById(miId).value=mid
+  var k=KEYS_SELECTOR[ka]
+  if(k){
+    var prov=mid.indexOf('/')>0?mid.split('/')[0]:''
+    var prEl=document.getElementById(miId.replace('model','provider'))
+    if(prEl)prEl.value=prov
+  }
+  document.querySelectorAll('.probe-models .m-card').forEach(function(c){c.classList.remove('sel')})
+  event.target.closest('.m-card').classList.add('sel')
 }
 function probeKeyAddModal(){
   var name=document.getElementById('km_name').value.trim(), key=document.getElementById('km_val').value.trim(), ep=document.getElementById('km_ep').value.trim()

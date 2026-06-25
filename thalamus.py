@@ -1566,6 +1566,8 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"status": "ok"})
                 return
             elif action == "update_defaults":
+                if "routes" in body:
+                    cfg["routes"] = body["routes"]
                 if "default" in body:
                     d = body["default"]
                     cfg["default"] = {
@@ -1598,6 +1600,7 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             # Write routes.json
             with open(ROUTES_PATH, "w") as f:
                 json.dump(cfg, f, indent=2, ensure_ascii=False)
+            _load_routes()  # 热加载到内存
             log(f"Admin: configuration updated (action={action})")
             self._send_json(200, {"status": "ok"})
         except Exception as e:
