@@ -30,6 +30,7 @@ import traceback
 import urllib.parse
 import urllib.request
 import http.client
+import socks
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
@@ -65,6 +66,7 @@ def _load_routes():
                 r["endpoint"],
                 r["key_env"],
                 r["label"],
+                r.get("proxy", False),
             ))
 
         # 默认路由
@@ -139,7 +141,7 @@ def _load_keys():
         KEYS = {}
 
 def _resolve_key(key_env: str) -> str:
-    """Resolve key_env to an (api_key, base_url) tuple.
+    """Resolve key_env to an API key.
     
     key_env can be:
     - A KEYS alias: resolves to KEYS[alias]["key"]
@@ -149,10 +151,10 @@ def _resolve_key(key_env: str) -> str:
     """
     if not key_env:
         return ""
-    # First check KEYS dict (for key aliases)
+    # First check KEYS dict (for key aliases from keys.json)
     if key_env in KEYS:
         return KEYS[key_env]["key"]
-    # Then fallback to environment variable
+    # Then fallback to direct environment variable
     return os.environ.get(key_env, "")
 
 def _resolve_endpoint(key_env: str) -> str:
@@ -197,7 +199,7 @@ def _get_admin_password() -> str:
 
 START_TIME = time.time()
 _spend_lock = threading.Lock()
-_spend = {"total": 0.0, "by_provider": {}, "calls": 0, "fallbacks": 0, "errors": 0}
+_spend = {"total": 0.0, "by_provider": {}, "calls": 0, "fallbacks": 0, "errors": 0, "total_tokens": 0, "token_by_provider": {}}
 _startup_errors = []
 
 # 代理白名单 — 启动时一次性设置，避免多线程竞态
@@ -239,12 +241,13 @@ def _set_noproxy(domain: str):
     pass
 
 
-def _make_request(endpoint: str, body: dict, key: str, stream: bool = False, timeout: int = 300):
+def _make_request(endpoint: str, body: dict, key: str, stream: bool = False, timeout: int = 60, use_socks: bool = False):
     """
     向后端发 HTTP 请求。
     stream=False → 返回完整响应 dict
     stream=True  → 返回 (http.client.HTTPResponse, dict_info)
                    调用方负责读取 chunks 并关闭
+    use_socks=True → 通过 SOCKS5 代理转发（默认 127.0.0.1:1080）
     """
     parsed = urllib.parse.urlparse(endpoint)
     host = parsed.hostname or ""
@@ -261,8 +264,24 @@ def _make_request(endpoint: str, body: dict, key: str, stream: bool = False, tim
         "User-Agent": "Thalamus/3.0",
     }
 
-    ctx = ssl.create_default_context()
-    conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=timeout)
+    if use_socks:
+        proxy_host = os.environ.get("THALAMUS_PROXY_HOST", "127.0.0.1")
+        proxy_port = int(os.environ.get("THALAMUS_PROXY_PORT", "1080"))
+
+        class _ProxyConn(http.client.HTTPSConnection):
+            def connect(self):
+                self.sock = socks.socksocket()
+                self.sock.set_proxy(socks.SOCKS5, proxy_host, proxy_port)
+                self.sock.settimeout(timeout)
+                self.sock.connect((self.host, self.port))
+                # TLS 握手
+                ctx = ssl.create_default_context()
+                self.sock = ctx.wrap_socket(self.sock, server_hostname=self.host)
+
+        conn = _ProxyConn(host, port, timeout=timeout)
+    else:
+        ctx = ssl.create_default_context()
+        conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=timeout)
 
     try:
         conn.request("POST", path, body=json.dumps(body).encode(), headers=headers)
@@ -273,7 +292,6 @@ def _make_request(endpoint: str, body: dict, key: str, stream: bool = False, tim
             raise RuntimeError(f"Backend {resp.status}: {err_body}")
 
         if stream:
-            # 返回原始连接和响应，调用方负责读+关
             return (conn, resp)
         else:
             raw = resp.read()
@@ -285,7 +303,7 @@ def _make_request(endpoint: str, body: dict, key: str, stream: bool = False, tim
         raise
 
 
-def _read_stream_response(conn, resp, timeout=300):
+def _read_stream_response(conn, resp, timeout=10):
     """从流式响应中读取 SSE chunks，作为 generator"""
     try:
         while True:
@@ -339,10 +357,10 @@ def classify(messages: list) -> tuple | None:
     if not text:
         return None
 
-    for pattern, model, provider, endpoint, key_env, label in ROUTES:
+    for pattern, model, provider, endpoint, key_env, label, proxy in ROUTES:
         if pattern.search(text):
             log(f"ROUTE: regex → {label}")
-            return (endpoint, model, key_env, provider, label)
+            return (endpoint, model, key_env, provider, label, proxy)
 
     log("ROUTE: default → DeepSeek")
     return None
@@ -516,7 +534,20 @@ def process(body: dict) -> tuple[str, bool, dict]:
     messages = body.get("messages", [])
     is_stream = body.get("stream", False)
 
-    # 0. Pre-check：先查能不能不写代码
+    # 0. Input length guard: 如果总输入 > 140K 字符，跳过 token173 路由直接走 DeepSeek
+    total_input_chars = sum(
+        len(m.get("content", "")) if isinstance(m.get("content"), str) else 0
+        for m in messages
+    )
+    long_input = total_input_chars > 140_000
+    if long_input:
+        log(f"INPUT TOO LONG ({total_input_chars} chars): skipping route classification, going straight to DeepSeek")
+        endpoint, model, key_env, provider, label, proxy = (
+            DEFAULT_ENDPOINT, DEFAULT_MODEL, DEFAULT_KEY_ENV, DEFAULT_PROVIDER, "DeepSeek (long input)", False
+        )
+        route = (endpoint, model, key_env, provider, label, proxy)
+
+    # 1. Pre-check：先查能不能不写代码
     pc_result = precheck(messages)
     if pc_result and pc_result.get("intercepted"):
         log(f"PRECHECK: bypassed routing, task solved without code generation")
@@ -549,15 +580,19 @@ def process(body: dict) -> tuple[str, bool, dict]:
         return ("json", False, response)
 
     # 1. 分类
-    route = classify(messages)
+    if not long_input:
+        route = classify(messages)
+    else:
+        route = route  # 保留 input length guard 设置的路由
 
     # 2. 构建转发 body（替换 model 为路由目标，保留其他所有参数）
     if route:
-        endpoint, model, key_env, provider, label = route
+        endpoint, model, key_env, provider, label, proxy = route
     else:
         endpoint, model, key_env = DEFAULT_ENDPOINT, DEFAULT_MODEL, DEFAULT_KEY_ENV
         provider = DEFAULT_PROVIDER
         label = "DeepSeek (default)"
+        proxy = False
 
     key = _resolve_key(key_env)
     if not key:
@@ -580,8 +615,9 @@ def process(body: dict) -> tuple[str, bool, dict]:
 
     # 4. 请求后端
     try:
+        use_socks = proxy
         if is_stream:
-            conn, resp = _make_request(endpoint, fwd_body, key, stream=True)
+            conn, resp = _make_request(endpoint, fwd_body, key, stream=True, use_socks=use_socks)
             # 记录路由延迟在 generator 的元数据中
             latency = time.time() - t0
             _record_stats(provider, label, latency, is_stream)
@@ -594,8 +630,8 @@ def process(body: dict) -> tuple[str, bool, dict]:
                 except Exception as e:
                     log(f"STREAM ERROR (mid-stream): {label} | {e}")
                     # mid-stream 无法 fallback，只能终止
-                    yield f'data: {{"error": "Stream interrupted"}}\n\n'.encode()
-                    yield "data: [DONE]\n\n".encode()
+                    yield f'data: {{"error": "Stream interrupted"}}\\n\\n'.encode()
+                    yield "data: [DONE]\\n\\n".encode()
                 finally:
                     try:
                         conn.close()
@@ -603,43 +639,49 @@ def process(body: dict) -> tuple[str, bool, dict]:
                         pass
             return ("stream", True, stream_gen())
         else:
-            data = _make_request(endpoint, fwd_body, key, stream=False)
+            data = _make_request(endpoint, fwd_body, key, stream=False, use_socks=use_socks)
             latency = time.time() - t0
             _record_stats(provider, label, latency, is_stream)
 
-            # 提取用量信息
-            usage = data.get("usage", {})
-            choice = data.get("choices", [{}])[0]
-            actual_model = data.get("model", model)
-            choice_msg = choice.get("message", {})
-            content_len = len(choice_msg.get("content", "") or "")
-            has_tools = "tool_calls" in choice_msg
+        # 提取用量信息
+        usage = data.get("usage", {})
+        pt = usage.get("prompt_tokens", 0)
+        ct = usage.get("completion_tokens", 0)
+        if pt or ct:
+            with _spend_lock:
+                _spend["total_tokens"] += pt + ct
+                _spend["token_by_provider"][provider] = _spend["token_by_provider"].get(provider, 0) + pt + ct
+        choice = data.get("choices", [{}])[0]
+        actual_model = data.get("model", model)
+        choice_msg = choice.get("message", {})
+        content_len = len(choice_msg.get("content", "") or "")
+        has_tools = "tool_calls" in choice_msg
 
-            log(f"CALL: {label} | {latency:.2f}s | "
-                f"tok={usage.get('prompt_tokens',0)}+{usage.get('completion_tokens',0)} | "
-                f"content={content_len}c tool_calls={'Y' if has_tools else 'N'} | "
-                f"model={actual_model}")
+        log(f"CALL: {label} | {latency:.2f}s | "
+            f"tok={usage.get('prompt_tokens',0)}+{usage.get('completion_tokens',0)} | "
+            f"content={content_len}c tool_calls={'Y' if has_tools else 'N'} | "
+            f"model={actual_model}")
 
-            # 原样返回，不修改 choice 结构
-            response = {
-                "id": data.get("id", f"thalamus-{uuid.uuid4().hex[:12]}"),
-                "object": "chat.completion",
-                "created": data.get("created", int(time.time())),
-                "model": actual_model,
-                "choices": [{
-                    "index": 0,
-                    "message": choice_msg,
-                    "finish_reason": choice.get("finish_reason", "stop"),
-                }],
-                "usage": usage,
-                "_thalamus": {
-                    "routed_to": label,
-                    "provider": provider,
-                    "latency_s": round(latency, 2),
-                },
-            }
-            evolution_learn(label, latency, success=True)
-            return ("json", False, response)
+        # 原样返回，不修改 choice 结构
+        response = {
+            "id": data.get("id", f"thalamus-{uuid.uuid4().hex[:12]}"),
+            "object": "chat.completion",
+            "created": data.get("created", int(time.time())),
+            "model": actual_model,
+            "choices": [{
+                "index": 0,
+                "message": choice_msg,
+                "finish_reason": choice.get("finish_reason", "stop"),
+            }],
+            "usage": usage,
+            "_thalamus": {
+                "routed_to": label,
+                "provider": provider,
+                "latency_s": round(latency, 2),
+            },
+        }
+        evolution_learn(label, latency, success=True)
+        return ("json", False, response)
 
     except Exception as e:
         latency = time.time() - t0
@@ -814,15 +856,15 @@ _ANALYSIS_DOMAINS = {"token-plan-cn.xiaomimimo.com", "api.deepseek.com", "openro
 
 _ANALYSIS_PERSONAS = {
     "code": {
-        "model": "mimo-v2.5-pro",
+        "hint": "claude",  # 走 claude-haiku 路由 (token173, 可用)
         "system": "你是一名资深软件架构师。以清晰、严谨的风格分析代码问题。",
     },
     "reasoning": {
-        "model": "openrouter/auto",
+        "hint": "gpt",  # 走 gpt-5.4-mini 路由 (token173, 可用)
         "system": "你是一名逻辑分析师。从多个角度审视问题，给出全面的推理链。",
     },
     "creative": {
-        "model": "deepseek-chat",
+        "hint": "deepseek",
         "system": "你是一名创意顾问。提供新颖的视角和创新的解决方案。",
     },
 }
@@ -847,26 +889,24 @@ def multi_analysis(prompt: str, max_tokens: int = 4096) -> dict:
 
     def _call_perspective(name: str, cfg: dict):
         try:
+            hint = cfg.get("hint", "")
             endpoint = DEFAULT_ENDPOINT
-            key_env = DEFAULT_KEY_ENV
             model = DEFAULT_MODEL
+            key_env = DEFAULT_KEY_ENV
             provider = DEFAULT_PROVIDER
 
-            if "xiaomimimo" in cfg.get("model", ""):
-                # 找 MiMo 路由
-                for p, m, prov, ep, ke, _l in ROUTES:
-                    if "xiaomi" in prov:
-                        endpoint, model, key_env, provider = ep, m, ke, prov
-                        break
-            elif "openrouter" in cfg.get("model", ""):
-                for p, m, prov, ep, ke, _l in ROUTES:
-                    if "openrouter" in prov:
-                        endpoint, model, key_env, provider = ep, m, ke, prov
-                        break
+            # 通过 hint 匹配路由：先精确匹配 label/model，再模糊匹配
+            for p, m, prov, ep, ke, label in ROUTES:
+                if hint and (hint in label.lower() or hint in m.lower() or hint in prov.lower()):
+                    endpoint = ep
+                    model = m
+                    key_env = ke
+                    provider = prov
+                    break
 
-            key = os.environ.get(key_env, "")
+            key = _resolve_key(key_env)
             if not key:
-                raise RuntimeError(f"Key not set: {key_env}")
+                raise RuntimeError(f"Key not found: {key_env}")
 
             body = {
                 "model": model,
@@ -1320,20 +1360,44 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             cfg = json.loads(ROUTES_PATH.read_text())
             # Add version
             cfg["version"] = "4.0.0"
-            # Split keys into custom (manually added) and env (from environment)
+            # Split keys into custom (manually added in keys.json) and env (from environment variables)
             custom_keys = {}
             env_keys = {}
+            # All keys from keys.json are custom_keys — they have stored values
             for k, v in KEYS.items():
-                if os.environ.get(k):
-                    env_keys[k] = {
-                        "endpoint": v.get("endpoint", ""),
-                        "prefix": ("sk-****" + (os.environ.get(k, "")[-4:] or v.get("key", "")[-4:])),
-                    }
-                else:
-                    custom_keys[k] = {
-                        "key": v.get("key", ""),
-                        "endpoint": v.get("endpoint", ""),
-                    }
+                custom_keys[k] = {
+                    "key": v.get("key", ""),
+                    "endpoint": v.get("endpoint", ""),
+                }
+
+            # Scan environment for all API-key/token/credential env vars not already in KEYS
+            seen_aliases = set(KEYS.keys())
+            # Auto-detect all env vars that look like API keys / tokens / secrets
+            KEY_ENV_PATTERN = re.compile(
+                r'(API_KEY|APITOKEN|_TOKEN|_SECRET|_PASSWORD|_CREDENTIAL|CLIENT_SECRET|'
+                r'ACCESS_TOKEN|_KEY|BOT_TOKEN|WEBHOOK_SECRET|VERIFICATION_TOKEN|'
+                r'APP_SECRET|SERVICE_ACCOUNT|PRIVATE_KEY)',
+                re.IGNORECASE
+            )
+            for env_name in sorted(os.environ.keys()):
+                val = os.environ[env_name]
+                if not val or len(val) < 6 or val == "***":
+                    continue
+                if not KEY_ENV_PATTERN.search(env_name):
+                    continue
+                # Derive a friendly alias
+                alias = env_name.lower().replace('_api_key', '').replace('_token', '').replace('_secret', '').replace('_key', '')
+                if alias in seen_aliases:
+                    continue
+                env_keys[alias] = {
+                    "endpoint": "",
+                    "prefix": val[:4] + "****" + val[-4:],
+                    "env_var": env_name,
+                }
+                seen_aliases.add(alias)
+                if len(env_keys) >= 30:  # cap at 30 to avoid flooding the panel
+                    break
+
             cfg["custom_keys"] = custom_keys
             cfg["env_keys"] = env_keys
             self._send_json(200, cfg)
@@ -1381,6 +1445,10 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                     balances["openrouter"] = data.get("data", {})
             except Exception as e:
                 balances["openrouter"] = {"error": str(e)[:100]}
+            # Token173 — tokens from local tracking (no external balance API)
+            balances["token173"] = {
+                "total_tokens": _spend.get("token_by_provider", {}).get("token173", 0),
+            }
             self._send_json(200, balances)
         elif self.path in ("/admin/api/logs", "/admin/api/logs/"):
             if not self._check_admin_auth():
@@ -1443,6 +1511,17 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 log(f"Admin reload error: {e}")
                 self._send_error(500, str(e))
+            return
+
+        # ── 重启 Thalamus 服务 ──
+        if path in ("/admin/api/restart", "/admin/api/restart/"):
+            log("Admin: restart requested via admin panel")
+            self._send_json(200, {"status": "ok", "message": "Restarting..."})
+            # Small delay so the response has time to reach the browser
+            threading.Thread(target=lambda: (
+                time.sleep(1),
+                os.kill(os.getpid(), 9 if hasattr(signal, 'SIGKILL') else 15)
+            )).start()
             return
 
         self._send_error(404, "Not found")
@@ -1587,28 +1666,31 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                     cfg["routes"] = body["routes"]
                 if "default" in body:
                     d = body["default"]
+                    current_def = cfg.get("default", {})
                     cfg["default"] = {
-                        "model": d.get("model", cfg["default"]["model"]),
-                        "provider": d.get("provider", cfg["default"]["provider"]),
-                        "endpoint": d.get("endpoint", cfg["default"]["endpoint"]),
-                        "key_env": d.get("key_env", cfg["default"]["key_env"]),
+                        "model": d.get("model", current_def.get("model", "deepseek-chat")),
+                        "provider": d.get("provider", current_def.get("provider", "deepseek")),
+                        "endpoint": d.get("endpoint", current_def.get("endpoint", "https://api.deepseek.com/v1/chat/completions")),
+                        "key_env": d.get("key_env", current_def.get("key_env", "DEEPSEEK_API_KEY")),
                     }
                 if "fallback" in body:
                     fb = body["fallback"]
+                    current_fb = cfg.get("fallback", {})
                     cfg["fallback"] = {
-                        "model": fb.get("model", cfg["fallback"]["model"]),
-                        "provider": fb.get("provider", cfg["fallback"]["provider"]),
-                        "endpoint": fb.get("endpoint", cfg["fallback"]["endpoint"]),
-                        "key_env": fb.get("key_env", cfg["fallback"]["key_env"]),
+                        "model": fb.get("model", current_fb.get("model", "mimo-v2-flash")),
+                        "provider": fb.get("provider", current_fb.get("provider", "xiaomi")),
+                        "endpoint": fb.get("endpoint", current_fb.get("endpoint", "https://token-plan-cn.xiaomimimo.com/v1/chat/completions")),
+                        "key_env": fb.get("key_env", current_fb.get("key_env", "XIAOMI_API_KEY")),
                     }
                 if "precheck" in body:
                     pc = body["precheck"]
+                    current_pc = cfg.get("precheck", {})
                     cfg["precheck"] = {
-                        "enabled": pc.get("enabled", cfg["precheck"]["enabled"]),
-                        "model": pc.get("model", cfg["precheck"]["model"]),
-                        "provider": pc.get("provider", cfg["precheck"]["provider"]),
-                        "endpoint": pc.get("endpoint", cfg["precheck"]["endpoint"]),
-                        "key_env": pc.get("key_env", cfg["precheck"]["key_env"]),
+                        "enabled": pc.get("enabled", current_pc.get("enabled", True)),
+                        "model": pc.get("model", current_pc.get("model", cfg["default"]["model"])),
+                        "provider": pc.get("provider", current_pc.get("provider", cfg["default"]["provider"])),
+                        "endpoint": pc.get("endpoint", current_pc.get("endpoint", cfg["default"]["endpoint"])),
+                        "key_env": pc.get("key_env", current_pc.get("key_env", cfg["default"]["key_env"])),
                     }
             else:
                 self._send_error(400, f"Unknown action: {action}")

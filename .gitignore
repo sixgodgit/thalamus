@@ -4,3 +4,4 @@ admin.pwd
 keys.json
 .env
 *.bak*
+thalamus.db

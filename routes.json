@@ -1,36 +1,34 @@
 {
   "routes": [
     {
-      "label": "ds",
-      "model": "deepseek-v4-flash",
-      "provider": "ds",
-      "key_env": "deepseek",
-      "endpoint": "https://api.deepseek.com/v1/chat/completions",
-      "pattern": ""
+      "label": "glm",
+      "model": "glm-4.7",
+      "provider": "glm",
+      "key_env": "中转海外",
+      "endpoint": "https://token173.com/v1/chat/completions",
+      "pattern": "代码|编程|写程序|重构|部署|deploy|运维|server|nginx|docker|systemctl|ssh|git|commit|PR|config|shell|bash|脚本|修复|报错|error|exception|traceback|日志分析|调试|debug|cron|备份|安装|apt|pip|npm|编译|make|测试|test|pytest|写一|写个|实现|算法|排序|函数|def |class |接口|API|SQL|数据库|python|java|golang|rust|node|react|vue",
+      "usage": "code",
+      "proxy": false
     },
     {
       "label": "claude",
-      "model": "anthropic/claude-opus-4.7-fast",
+      "model": "claude-sonnet-4-20250514",
       "provider": "anthropic",
-      "key_env": "openrouter",
-      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-      "pattern": "分析,对比,比较,推理,为什么,原因,根因,深度,论证,评估,策略,方案,设计架构,优缺点,权衡,决策,审查,审计,review,评审"
+      "key_env": "中转海外",
+      "endpoint": "https://token173.com/v1/chat/completions",
+      "pattern": "分析|对比|比较|推理|为什么|原因|根因|深度|论证|评估|策略|方案|设计架构|优缺点|权衡|决策|审查|审计|review|评审|探讨|解读|预测|利弊|推荐|建议|看法|观点|本质|根源|原理|机制|模型选择|技术选型|架构设计",
+      "usage": "reason",
+      "proxy": false
     },
     {
-      "label": "ds pro",
-      "model": "deepseek-v4-pro",
-      "provider": "ds",
-      "key_env": "deepseek",
-      "endpoint": "https://api.deepseek.com/v1/chat/completions",
-      "pattern": "代码,编程,写程序,重构,部署,deploy,运维,server,nginx,docker,systemctl,ssh,git,commit,PR,config,shell,bash,脚本,修复,报错,error,exception,traceback,日志分析,调试,debug,cron,备份,安装,apt,pip,npm,编译,make,测试,test,pytest"
-    },
-    {
-      "label": "gemini",
-      "model": "~google/gemini-flash-latest",
-      "provider": "~google",
-      "key_env": "openrouter",
-      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-      "pattern": "图片,截图,照片,图像,看图,OCR,识别图,vision,视觉,多媒体"
+      "label": "qwen",
+      "model": "qwen3-omni-flash",
+      "provider": "",
+      "key_env": "中转海外",
+      "endpoint": "https://token173.com/v1",
+      "pattern": "图片|截图|照片|图像|看图|OCR|识别图|vision|视觉|多媒体|画图|绘制|渲染|流程图|架构图|UML|图表|图像分析|画面|这张图|看看这",
+      "usage": "vision",
+      "proxy": false
     }
   ],
   "default": {
@@ -40,13 +38,13 @@
     "key_env": "deepseek"
   },
   "fallback": {
-    "model": "deepseek-v4-pro",
-    "provider": "deepseek",
-    "endpoint": "https://api.deepseek.com/v1/chat/completions",
-    "key_env": "deepseek"
+    "model": "glm-4.7",
+    "provider": "glm",
+    "endpoint": "https://token173.com/v1",
+    "key_env": "中转海外"
   },
   "precheck": {
-    "enabled": true,
+    "enabled": false,
     "model": "deepseek-v4-flash",
     "provider": "deepseek",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
