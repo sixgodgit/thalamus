@@ -20,6 +20,7 @@ import os
 import re
 import secrets
 import signal
+import socket
 import ssl
 import sys
 import time
@@ -92,6 +93,18 @@ def _load_routes():
         PRECHECK_KEY_ENV = pc.get("key_env", DEFAULT_KEY_ENV)
         PRECHECK_MAX_TOKENS = pc.get("max_tokens", 512)
         PRECHECK_TEMPERATURE = pc.get("temperature", 0.3)
+        # 任务1: 哪些 label 需要 precheck（默认代码类）
+        global PRECHECK_TRIGGER_LABELS, PRECHECK_DEFAULT_ROUTE_PRECHECK
+        PRECHECK_TRIGGER_LABELS = set(pc.get("trigger_labels", ["code", "coder", "dev", "glm"]))
+        PRECHECK_DEFAULT_ROUTE_PRECHECK = pc.get("default_route_precheck", False)
+        # 任务2: precheck 专用快速模型和超时
+        global PRECHECK_TIMEOUT, PRECHECK_FAST_MODEL, PRECHECK_FAST_PROVIDER
+        global PRECHECK_FAST_ENDPOINT, PRECHECK_FAST_KEY_ENV
+        PRECHECK_TIMEOUT = pc.get("timeout", 5)  # 默认5秒
+        PRECHECK_FAST_MODEL = pc.get("fast_model", PRECHECK_MODEL)
+        PRECHECK_FAST_PROVIDER = pc.get("fast_provider", PRECHECK_PROVIDER)
+        PRECHECK_FAST_ENDPOINT = pc.get("fast_endpoint", PRECHECK_ENDPOINT)
+        PRECHECK_FAST_KEY_ENV = pc.get("fast_key_env", PRECHECK_KEY_ENV)
 
         log(f"Loaded {len(ROUTES)} routes from {ROUTES_PATH}")
     except Exception as e:
@@ -113,8 +126,16 @@ PRECHECK_MODEL = DEFAULT_MODEL
 PRECHECK_PROVIDER = DEFAULT_PROVIDER
 PRECHECK_ENDPOINT = DEFAULT_ENDPOINT
 PRECHECK_KEY_ENV = DEFAULT_KEY_ENV
-PRECHECK_MAX_TOKENS = 512
-PRECHECK_TEMPERATURE = 0.3
+PRECHECK_MAX_TOKENS=512
+PRECHECK_TEMPERATURE=0.3
+PRECHECK_TRIGGER_LABELS={"code", "coder", "dev", "glm"}
+PRECHECK_DEFAULT_ROUTE_PRECHECK=False
+# 任务2: precheck 快速模型和超时默认值
+PRECHECK_TIMEOUT=5
+PRECHECK_FAST_MODEL="deepseek-v4-flash"
+PRECHECK_FAST_PROVIDER="deepseek"
+PRECHECK_FAST_ENDPOINT="https://api.deepseek.com/v1/chat/completions"
+PRECHECK_FAST_KEY_ENV="deepseek"
 
 # 密钥存储 — 统一管理 key + endpoint
 # keys.json 格式: {"ALIAS": {"key": "sk-...", "endpoint": "https://..."}}
@@ -200,6 +221,10 @@ def _get_admin_password() -> str:
 START_TIME = time.time()
 _spend_lock = threading.Lock()
 _spend = {"total": 0.0, "by_provider": {}, "calls": 0, "fallbacks": 0, "errors": 0, "total_tokens": 0, "token_by_provider": {}}
+# 任务6: 成本性能日志，记录每次调用的延迟和预估成本，不做路由选择（现有 routes.json 一个 label 只有一个候选）
+_COST_PERF_LOG = []  # [{label, provider, model, latency, input_tok, output_tok, est_cost, ts}]
+_COST_PERF_LOG_LOCK = threading.Lock()
+_COST_PERF_LOG_MAX = 200
 _startup_errors = []
 
 # 代理白名单 — 启动时一次性设置，避免多线程竞态
@@ -370,6 +395,103 @@ def classify(messages: list) -> tuple | None:
 # Pre-check：先查能不能不写代码（Ponytail 理念）
 # ══════════════════════════════════════════
 
+# 任务3: precheck 内存缓存
+_PRECHECK_CACHE = {}  # text_hash -> {result, ts}
+_PRECHECK_CACHE_TTL = 300  # 默认5分钟
+_PRECHECK_CACHE_MAX = 100
+_PRECHECK_CACHE_HITS = 0
+_PRECHECK_CACHE_MISSES = 0
+_PRECHECK_CACHE_LOCK = threading.Lock()
+
+# 任务4: Sandglass — 启动时一次性 import，不为每次请求重复 sys.path 操作
+_SANDBOX_IMPORTED = False
+_SANDBOX_SEARCH = None
+
+def _init_sandglass():
+    global _SANDBOX_IMPORTED, _SANDBOX_SEARCH
+    if _SANDBOX_IMPORTED:
+        return
+    try:
+        import sys as _sys
+        for _p in ["/root/nexsandglass", "/root/.hermes/NexSandglass"]:
+            if _p not in _sys.path:
+                _sys.path.insert(0, _p)
+        import os as _os
+        _os.environ.setdefault("NEXSANDBASE_HOME", "/root/.hermes/nexsandglass")
+        from sandglass_sqlite import search as _sg_search
+        _SANDBOX_SEARCH = _sg_search
+        _SANDBOX_IMPORTED = True
+        log("SANDBOX: initialized at startup")
+    except Exception as e:
+        log(f"SANDBOX: init failed (non-fatal): {e}")
+
+def _sandglass_query(text: str, max_time: float = 0.2) -> str:
+    """查询 Sandglass 历史记录，超时不超过 max_time 秒。不影响主流程。"""
+    if not _SANDBOX_IMPORTED or _SANDBOX_SEARCH is None:
+        return ""
+    _stopwords = {"用", "在", "的", "了", "吗", "吧", "呢", "啊", "什么", "怎么", "如何",
+                  "哪个", "哪些", "可以", "能", "要", "是", "有", "给", "把", "被",
+                  "from", "to", "in", "on", "at", "for", "of", "the", "a", "an",
+                  "and", "or", "do", "is", "it", "with", "很", "太", "不", "没", "还",
+                  "说", "话", "对", "那", "这", "我", "你", "他", "她"}
+    import re as _re
+    import threading as _t
+    # 提取英文/数字关键词（技术词汇）
+    _tech = [w.lower() for w in _re.findall(r"[a-zA-Z0-9_]{2,}", text)
+             if w.lower() not in _stopwords]
+    if _tech:
+        _kw = " OR ".join(_tech[:3])
+    else:
+        _words = [w for w in text.split() if len(w) > 1]
+        _kw = " ".join(_words[:2]) if _words else ""
+
+    if not _kw:
+        return ""
+
+    _result_lines = []
+
+    def _do_query():
+        try:
+            _results = _SANDBOX_SEARCH(_kw, limit=3)
+            if _results:
+                for _rid, _ts, _rtext in _results[:2]:
+                    _short = _rtext.replace("\n", " ").strip()[:100]
+                    _result_lines.append(f"  [{_ts}] {_short}")
+        except Exception:
+            pass
+
+    _t_handle = _t.Thread(target=_do_query, daemon=True)
+    _t_handle.start()
+    _t_handle.join(timeout=max_time)
+
+    if not _result_lines:
+        return ""
+    return "\n📖 **之前类似需求的记录：**\n" + "\n".join(_result_lines)
+
+def _precheck_cache_key(text: str) -> str:
+    return hashlib.md5(text.strip()[-200:].encode()).hexdigest()
+
+def _precheck_cache_get(key: str) -> dict | None:
+    global _PRECHECK_CACHE_HITS, _PRECHECK_CACHE_MISSES
+    entry = _PRECHECK_CACHE.get(key)
+    if entry and (time.time() - entry["ts"]) < _PRECHECK_CACHE_TTL:
+        _PRECHECK_CACHE_HITS += 1
+        return entry["result"]
+    if entry:
+        # 过期删除
+        del _PRECHECK_CACHE[key]
+    _PRECHECK_CACHE_MISSES += 1
+    return None
+
+def _precheck_cache_set(key: str, result: dict):
+    with _PRECHECK_CACHE_LOCK:
+        if len(_PRECHECK_CACHE) >= _PRECHECK_CACHE_MAX:
+            # LRU-ish: 删掉最旧的一半
+            sorted_keys = sorted(_PRECHECK_CACHE.keys(), key=lambda k: _PRECHECK_CACHE[k]["ts"])
+            for k in sorted_keys[:len(sorted_keys)//2]:
+                del _PRECHECK_CACHE[k]
+        _PRECHECK_CACHE[key] = {"result": result, "ts": time.time()}
+
 PRECHECK_SYSTEM_PROMPT = """你是 Preflight Checker，负责在 AI 编码 Agent 接活前拦住不必要的代码生成。
 
 收到用户需求后，按以下顺序判断：
@@ -418,9 +540,17 @@ def precheck(messages: list) -> dict | None:
     if not text:
         return None
 
+    # 任务3: 查缓存
+    _ckey = _precheck_cache_key(text)
+    _cached = _precheck_cache_get(_ckey)
+    if _cached is not None:
+        log(f"PRECHECK CACHE HIT: {_cached.get('intercepted', '?')}")
+        _cached["cache_hit"] = True
+        return _cached if _cached.get("intercepted") else None
+
     # 预检 prompt 很轻：只发用户消息 + system prompt，不传全上下文
     pre_body = {
-        "model": PRECHECK_MODEL,
+        "model": PRECHECK_FAST_MODEL,
         "messages": [
             {"role": "system", "content": PRECHECK_SYSTEM_PROMPT},
             {"role": "user", "content": text},
@@ -430,14 +560,14 @@ def precheck(messages: list) -> dict | None:
         "stream": False,
     }
 
-    key = _resolve_key(PRECHECK_KEY_ENV)
+    key = _resolve_key(PRECHECK_FAST_KEY_ENV)
     if not key:
-        log(f"PRECHECK WARNING: key not set: {PRECHECK_KEY_ENV}")
+        log(f"PRECHECK WARNING: key not set: {PRECHECK_FAST_KEY_ENV}")
         return None
 
     t0 = time.time()
     try:
-        data = _make_request(PRECHECK_ENDPOINT, pre_body, key, stream=False)
+        data = _make_request(PRECHECK_FAST_ENDPOINT, pre_body, key, stream=False, timeout=PRECHECK_TIMEOUT)
         latency = time.time() - t0
         choice = data.get("choices", [{}])[0]
         reply = choice.get("message", {}).get("content", "").strip()
@@ -458,63 +588,31 @@ def precheck(messages: list) -> dict | None:
                 category = "stdlib"
                 suggestion = parts[1] if len(parts) > 1 else reply
             log(f"PRECHECK: intercepted → {category}: {suggestion}")
-            # 查询 Sandglass：用户以前做过类似需求吗？
-            sandglass_hint = ""
-            try:
-                import sys as _sys
-                # sandglass_sqlite 依赖 sandglass_paths._NB，后者读 NEXSANDBASE_HOME
-                import os as _os
-                _os.environ.setdefault("NEXSANDBASE_HOME", "/root/.hermes/nexsandglass")
-                _sand_paths = ["/root/nexsandglass", "/root/.hermes/NexSandglass"]
-                for _p in _sand_paths:
-                    if _p not in _sys.path:
-                        _sys.path.insert(0, _p)
-                from sandglass_sqlite import search as _sg_search
-                # 取用户消息前几个关键词搜索——先精确后宽松
-                _stopwords = {"用", "在", "的", "了", "吗", "吧", "呢", "啊", "什么", "怎么", "如何",
-                              "哪个", "哪些", "可以", "能", "要", "是", "有", "给", "把", "被",
-                              "from", "to", "in", "on", "at", "for", "of", "the", "a", "an",
-                              "and", "or", "do", "is", "it", "with", "很", "太", "不", "没", "还",
-                              "说", "话", "对", "那", "这", "我", "你", "他", "她"}
-                import re as _re
-                # 提取英文/数字关键词（技术词汇）
-                _tech = [w.lower() for w in _re.findall(r"[a-zA-Z0-9_]{2,}", text)
-                         if w.lower() not in _stopwords]
-                if _tech:
-                    # OR 搜索：任何技术词命中就算
-                    _kw = " OR ".join(_tech[:3])
-                    _results = _sg_search(_kw, limit=3)
-                else:
-                    # 纯中文查询——取前2个词做 AND 搜索
-                    _words = [w for w in text.split() if len(w) > 1]
-                    _kw = " ".join(_words[:2]) if _words else ""
-                    _results = _sg_search(_kw, limit=3) if _kw else []
-                if _results:
-                    _lines = []
-                    for _rid, _ts, _rtext in _results[:2]:
-                        _short = _rtext.replace("\n", " ").strip()[:100]
-                        _lines.append(f"  [{_ts}] {_short}")
-                    if _lines:
-                        sandglass_hint = "\n📖 **之前类似需求的记录：**\n" + "\n".join(_lines)
-                    log(f"PRECHECK: sandglass hit {len(_results)} for '{_kw}'")
-                else:
-                    log(f"PRECHECK: sandglass no hit for '{_kw}'")
-            except Exception as _e:
-                log(f"PRECHECK: sandglass query failed: {_e}")
-                import traceback as _tb
-                log(f"PRECHECK: sandglass traceback: {_tb.format_exc()}")
+            # 查询 Sandglass：用户以前做过类似需求吗？（异步 + 200ms 超时，不阻塞主流程）
+            sandglass_hint = _sandglass_query(text, max_time=0.2)
+            if sandglass_hint:
+                log(f"PRECHECK: sandglass hit for text[:60]={text[:60]!r}")
 
-            return {
+            _result = {
                 "intercepted": True,
                 "category": category,
                 "suggestion": suggestion,
                 "sandglass_hint": sandglass_hint,
                 "latency": round(latency, 2),
             }
+            _precheck_cache_set(_ckey, _result)
+            return _result
 
         # NO 或无法解析 → 放行
-        return {"intercepted": False}
+        _result_no = {"intercepted": False}
+        _precheck_cache_set(_ckey, _result_no)
+        return _result_no
+    except (socket.timeout, TimeoutError) as _te:
+        _spend["precheck_timeouts"] = _spend.get("precheck_timeouts", 0) + 1
+        log(f"PRECHECK TIMEOUT ({PRECHECK_TIMEOUT}s): {_te}")
+        return None  # 超时不阻塞正常流程
     except Exception as e:
+        _spend["precheck_errors"] = _spend.get("precheck_errors", 0) + 1
         log(f"PRECHECK ERROR: {e}")
         return None  # precheck 失败不阻塞正常流程
 
@@ -547,11 +645,31 @@ def process(body: dict) -> tuple[str, bool, dict]:
         )
         route = (endpoint, model, key_env, provider, label, proxy)
 
-    # 1. Pre-check：先查能不能不写代码
-    pc_result = precheck(messages)
-    if pc_result and pc_result.get("intercepted"):
-        log(f"PRECHECK: bypassed routing, task solved without code generation")
-        suggestion = pc_result["suggestion"]
+    # 1. 先分类（正则匹配，零成本）
+    if not long_input:
+        route = classify(messages)
+    else:
+        route = route  # 保留 input length guard 设置的路由
+
+    # 2. 只在代码类路由才跑 precheck
+    should_precheck = False
+    precheck_label = ""
+    if route:
+        _label = route[4]  # label in (endpoint, model, key_env, provider, label, proxy)
+        precheck_label = _label
+        if any(trig in _label.lower() for trig in PRECHECK_TRIGGER_LABELS):
+            should_precheck = True
+    else:
+        # 没命中任何路由 → 走默认，按开关决定是否 precheck
+        precheck_label = "DeepSeek (default)"
+        if PRECHECK_DEFAULT_ROUTE_PRECHECK:
+            should_precheck = True
+
+    if should_precheck:
+        pc_result = precheck(messages)
+        if pc_result and pc_result.get("intercepted"):
+            log(f"PRECHECK: bypassed routing for label={precheck_label}, task solved without code generation")
+            suggestion = pc_result["suggestion"]
         # 构造一个直接建议的响应，不走模型路由
         reply_text = f"✅ **{pc_result['category'].upper()} 方案可用**\n\n{suggestion}"
         if pc_result.get("sandglass_hint"):
@@ -579,13 +697,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
         }
         return ("json", False, response)
 
-    # 1. 分类
-    if not long_input:
-        route = classify(messages)
-    else:
-        route = route  # 保留 input length guard 设置的路由
-
-    # 2. 构建转发 body（替换 model 为路由目标，保留其他所有参数）
+    # 3. 构建转发 body（替换 model 为路由目标，保留其他所有参数）
     if route:
         endpoint, model, key_env, provider, label, proxy = route
     else:
@@ -593,6 +705,12 @@ def process(body: dict) -> tuple[str, bool, dict]:
         provider = DEFAULT_PROVIDER
         label = "DeepSeek (default)"
         proxy = False
+
+    # 任务5: 路由熔断检查 — 在发起请求之前拦截
+    if route and _circuit_is_tripped(label):
+        log(f"CIRCUIT: {label} is OPEN, skipping to fallback")
+        _spend["circuit_breaker_skips"] = _spend.get("circuit_breaker_skips", 0) + 1
+        return _fallback_to_deepseek(body, is_stream)
 
     key = _resolve_key(key_env)
     if not key:
@@ -605,7 +723,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
     # 确保 stream 参数传给后端
     fwd_body["stream"] = is_stream
 
-    # 3. 域名代理处理
+    # 4. 域名代理处理
     domain = urllib.parse.urlparse(endpoint).hostname or ""
     if not domain:
         raise RuntimeError(f"Invalid endpoint domain: {endpoint}")
@@ -613,7 +731,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
 
     t0 = time.time()
 
-    # 4. 请求后端
+    # 5. 请求后端
     try:
         use_socks = proxy
         if is_stream:
@@ -662,6 +780,22 @@ def process(body: dict) -> tuple[str, bool, dict]:
             f"content={content_len}c tool_calls={'Y' if has_tools else 'N'} | "
             f"model={actual_model}")
 
+        # 任务6: 成本性能日志（仅记录，不做路由选择）
+        est_cost = _estimate_cost(provider, pt, ct)
+        with _COST_PERF_LOG_LOCK:
+            _COST_PERF_LOG.append({
+                "label": label,
+                "provider": provider,
+                "model": actual_model,
+                "latency": round(latency, 2),
+                "input_tok": pt,
+                "output_tok": ct,
+                "est_cost": round(est_cost, 6),
+                "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+            if len(_COST_PERF_LOG) > _COST_PERF_LOG_MAX:
+                _COST_PERF_LOG.pop(0)
+
         # 原样返回，不修改 choice 结构
         response = {
             "id": data.get("id", f"thalamus-{uuid.uuid4().hex[:12]}"),
@@ -687,7 +821,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
         latency = time.time() - t0
         _record_error(provider, label, str(e), latency)
 
-        # 5. 如果不是默认路由，fallback 到 DeepSeek
+        # 6. 如果不是默认路由，fallback 到 DeepSeek
         if route:
             log(f"FALLBACK: {label} failed ({e}) → DeepSeek")
             evolution_learn(label, latency, success=False)
@@ -965,6 +1099,69 @@ _EVOLUTION_SCORE = 0  # 积分
 EVOLUTION_PERSIST_PATH = Path(os.environ.get("THALAMUS_EVOLUTION",
     "/root/.hermes/data/thalamus-evolution.json"))
 
+# 任务5: 路由熔断
+# _CIRCUIT_BREAKER[label] = {"fail_count", "last_fail_ts", "last_probe_ts", "is_open"}
+_CIRCUIT_BREAKER = {}
+_CIRCUIT_BREAKER_LOCK = threading.Lock()
+_CIRCUIT_CONFIG = {
+    "consecutive_fail_threshold": 3,   # 连续 N 次失败 → 熔断
+    "half_open_interval": 60,          # N 秒后允许探测请求
+    "recover_success_count": 1,         # 连续成功 N 次 → 恢复
+}
+_CIRCUIT_BREAKER_TRIGGERED = 0  # 统计熔断触发次数
+
+def _circuit_get_state(label: str) -> dict:
+    """获取路由的熔断状态"""
+    with _CIRCUIT_BREAKER_LOCK:
+        state = _CIRCUIT_BREAKER.get(label)
+        if state is None:
+            state = {"fail_count": 0, "last_fail_ts": 0, "last_probe_ts": 0, "is_open": False}
+            _CIRCUIT_BREAKER[label] = state
+        return state
+
+def _circuit_is_tripped(label: str) -> bool:
+    """
+    检查路由是否被熔断。
+    如果熔断且距上次失败超过半开间隔，允许一次探测请求。
+    返回 True = 熔断中，应跳过此路由。
+    """
+    state = _circuit_get_state(label)
+    if not state["is_open"]:
+        return False
+    now = time.time()
+    # 半开恢复: 距上次失败超过 half_open_interval 秒，允许探测
+    if now - state["last_fail_ts"] > _CIRCUIT_CONFIG["half_open_interval"]:
+        state["last_probe_ts"] = now
+        state["is_open"] = False  # 临时关闭 + 标记为探测
+        log(f"CIRCUIT: half-open probe allowed for {label}")
+        return False  # 放行探测请求
+    return True
+
+def _circuit_record(label: str, success: bool):
+    """
+    记录路由调用结果，更新熔断状态。
+    集成在 evolution_learn 中调用。
+    """
+    global _CIRCUIT_BREAKER_TRIGGERED
+    state = _circuit_get_state(label)
+    now = time.time()
+    if success:
+        if state["is_open"]:
+            # 半开状态下成功 → 关闭熔断
+            state["is_open"] = False
+            state["fail_count"] = 0
+            log(f"CIRCUIT: closed for {label} (probe succeeded)")
+        else:
+            state["fail_count"] = max(0, state["fail_count"] - 1)
+    else:
+        state["fail_count"] += 1
+        state["last_fail_ts"] = now
+        if state["fail_count"] >= _CIRCUIT_CONFIG["consecutive_fail_threshold"]:
+            if not state["is_open"]:
+                state["is_open"] = True
+                _CIRCUIT_BREAKER_TRIGGERED += 1
+                log(f"CIRCUIT: TRIPPED for {label} (consecutive failures: {state['fail_count']})")
+
 
 def evolution_learn(label: str, latency: float, success: bool):
     """
@@ -986,6 +1183,8 @@ def evolution_learn(label: str, latency: float, success: bool):
 
     if success:
         _EVOLUTION_SCORE += 1
+        # 任务5: 路由熔断 — 成功时记录
+        _circuit_record(label, True)
         # 记录模式：同样的 prompt 前缀命中同一个路由 -> 成功模式
         if label not in [e.get("route") for e in _EVOLUTION_PATTERNS]:
             _EVOLUTION_PATTERNS.append({"route": label, "count": 1, "last": entry})
@@ -997,6 +1196,8 @@ def evolution_learn(label: str, latency: float, success: bool):
                     break
     else:
         _EVOLUTION_SCORE = max(_EVOLUTION_SCORE - 3, -50)
+        # 任务5: 路由熔断 — 失败时记录
+        _circuit_record(label, False)
 
     # 持久化
     _evolution_persist()
@@ -1111,7 +1312,36 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "evolution_score": _EVOLUTION_SCORE,
                 "evolution_decisions": len(_EVOLUTION_LOG),
                 "evolution_patterns": len(_EVOLUTION_PATTERNS),
+                "precheck_timeouts": _spend.get("precheck_timeouts", 0),
+                "precheck_errors": _spend.get("precheck_errors", 0),
+                "precheck_cache_hits": _PRECHECK_CACHE_HITS,
+                "precheck_cache_misses": _PRECHECK_CACHE_MISSES,
+                "circuit_breaker_skips": _spend.get("circuit_breaker_skips", 0),
+                "circuit_breaker_triggered": _CIRCUIT_BREAKER_TRIGGERED,
+                "circuit_breaker_open_routes": [
+                    {"label": k, "fail_count": v["fail_count"]}
+                    for k, v in _CIRCUIT_BREAKER.items() if v.get("is_open")
+                ],
             })
+        elif self.path in ("/cost-performance", "/cost-performance/"):
+            with _COST_PERF_LOG_LOCK:
+                _summary = {}
+                for entry in _COST_PERF_LOG:
+                    key = entry["label"]
+                    if key not in _summary:
+                        _summary[key] = {"calls": 0, "total_cost": 0.0, "total_latency": 0.0, "total_tokens": 0}
+                    _summary[key]["calls"] += 1
+                    _summary[key]["total_cost"] += entry["est_cost"]
+                    _summary[key]["total_latency"] += entry["latency"]
+                    _summary[key]["total_tokens"] += entry["input_tok"] + entry["output_tok"]
+                for k, v in _summary.items():
+                    c = v["calls"]
+                    v["avg_latency"] = round(v["total_latency"] / c, 2)
+                    v["avg_cost"] = round(v["total_cost"] / c, 6)
+                    del v["total_cost"]
+                    del v["total_latency"]
+                data = {"summary": _summary, "recent": _COST_PERF_LOG[-20:]}
+            self._send_json(200, data)
         elif self.path in ("/analysis", "/analysis/"):
             self._send_json(200, {
                 "endpoint": "/analysis (POST)",
@@ -1722,6 +1952,7 @@ def main():
     _evolution_load()
     _load_routes()
     _load_keys()
+    _init_sandglass()  # 启动时一次性加载 sandglass，不走请求关键路径
 
     log("=" * 50)
     log("Thalamus v4.0.0 — OpenAI-compatible transparent proxy + Pre-check")

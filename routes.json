@@ -44,10 +44,19 @@
     "key_env": "中转海外"
   },
   "precheck": {
-    "enabled": false,
+    "enabled": true,
     "model": "deepseek-v4-flash",
     "provider": "deepseek",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
-    "key_env": "deepseek"
+    "key_env": "deepseek",
+    "fast_model": "deepseek-v4-flash",
+    "fast_provider": "deepseek",
+    "fast_endpoint": "https://api.deepseek.com/v1/chat/completions",
+    "fast_key_env": "deepseek",
+    "timeout": 5,
+    "max_tokens": 512,
+    "temperature": 0.3,
+    "trigger_labels": ["code", "coder", "dev", "glm"],
+    "default_route_precheck": false
   }
 }
