@@ -1164,6 +1164,10 @@ function renderCards(bal){
   h+='<div class="card"><div class="icon">⏱️</div><div class="label">运行时长</div><div class="value purple">'+fmtDur(dur)+'</div><div class="sub">持续运行</div></div>'
   h+='<div class="card"><div class="icon">🔌</div><div class="label">活跃 Provider</div><div class="value green">'+prov+'</div><div class="sub">个模型</div></div>'
   h+='<div class="card"><div class="icon">🔄</div><div class="label">Fallback</div><div class="value '+(fb>0?'yellow':'green')+'">'+fb+'</div><div class="sub">'+(fb>0?'次降级':'无降级')+'</div></div>'
+  if(bc>0){
+    h+='<div class="card"><div class="icon">⚡</div><div class="label">狂暴模式</div><div class="value yellow">'+bc+'</div><div class="sub">'+bc+'次 · '+fmtTok(bt)+'</div></div>'
+    h+='<div class="card"><div class="icon">👁️</div><div class="label">总视角数</div><div class="value blue">'+bp+'</div><div class="sub">'+Math.round(bt/(bc||1))+' tok/次</div></div>'
+  }
   document.getElementById('cardsBox').innerHTML=h
 }
 function fmtDur(s){if(s<60)return Math.round(s)+'s'; if(s<3600)return Math.floor(s/60)+'m '+Math.round(s%60)+'s'; if(s<86400)return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'; return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h'}

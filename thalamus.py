@@ -1325,6 +1325,10 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                     {"label": k, "fail_count": v["fail_count"]}
                     for k, v in _CIRCUIT_BREAKER.items() if v.get("is_open")
                 ],
+                "berserker_calls": _spend.get("berserker_calls", 0),
+                "berserker_tokens": _spend.get("berserker_tokens", 0),
+                "berserker_perspectives": _spend.get("berserker_perspectives", 0),
+                "berserker_total_chars": _spend.get("berserker_total_chars", 0),
             })
         elif self.path in ("/cost-performance", "/cost-performance/"):
             with _COST_PERF_LOG_LOCK:
@@ -1634,6 +1638,13 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 analysis_result.get("count", 0) +
                 agg_data.get("usage", {}).get("total_tokens", 0)
             )
+
+            # 统计
+            with _spend_lock:
+                _spend["berserker_calls"] = _spend.get("berserker_calls", 0) + 1
+                _spend["berserker_tokens"] = _spend.get("berserker_tokens", 0) + total_tokens
+                _spend["berserker_perspectives"] = _spend.get("berserker_perspectives", 0) + analysis_result.get("count", 0)
+                _spend["berserker_total_chars"] = _spend.get("berserker_total_chars", 0) + len(agg_content)
 
             log(f"BERSERKER: done — {analysis_result.get('count', 0)} perspectives, {len(agg_content)} chars aggregated")
             self._send_json(200, {
