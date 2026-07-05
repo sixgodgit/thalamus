@@ -670,11 +670,11 @@ def process(body: dict) -> tuple[str, bool, dict]:
         if pc_result and pc_result.get("intercepted"):
             log(f"PRECHECK: bypassed routing for label={precheck_label}, task solved without code generation")
             suggestion = pc_result["suggestion"]
-        # 构造一个直接建议的响应，不走模型路由
-        reply_text = f"✅ **{pc_result['category'].upper()} 方案可用**\n\n{suggestion}"
-        if pc_result.get("sandglass_hint"):
-            reply_text += pc_result["sandglass_hint"]
-        response = {
+            # 构造一个直接建议的响应，不走模型路由
+            reply_text = f"✅ **{pc_result['category'].upper()} 方案可用**\\n\\n{suggestion}"
+            if pc_result.get("sandglass_hint"):
+                reply_text += pc_result["sandglass_hint"]
+            response = {
             "id": f"thalamus-{uuid.uuid4().hex[:12]}",
             "object": "chat.completion",
             "created": int(time.time()),
@@ -695,7 +695,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
                 "intercepted": True,
             },
         }
-        return ("json", False, response)
+            return ("json", False, response)
 
     # 3. 构建转发 body（替换 model 为路由目标，保留其他所有参数）
     if route:
@@ -1030,7 +1030,7 @@ def multi_analysis(prompt: str, max_tokens: int = 4096) -> dict:
             provider = DEFAULT_PROVIDER
 
             # 通过 hint 匹配路由：先精确匹配 label/model，再模糊匹配
-            for p, m, prov, ep, ke, label in ROUTES:
+            for p, m, prov, ep, ke, label, proxy in ROUTES:
                 if hint and (hint in label.lower() or hint in m.lower() or hint in prov.lower()):
                     endpoint = ep
                     model = m
@@ -1289,6 +1289,9 @@ class ThalamusHandler(BaseHTTPRequestHandler):
         if self.path in ("/", ""):
             # Root → admin panel
             self._serve_admin_html()
+        elif self.path in ("/terminal", "/terminal/"):
+            # Terminal hacker view
+            self._serve_terminal_html()
         elif self.path in ("/health", "/health/"):
             uptime = int(time.time() - START_TIME)
             self._send_json(200, {
@@ -1414,6 +1417,8 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self._handle_parallel(body)
         elif self.path in ("/analysis", "/analysis/"):
             self._handle_analysis(body)
+        elif self.path in ("/v1/berserker", "/v1/berserker/"):
+            self._handle_berserker(body)
         elif self.path.startswith("/admin"):
             self._handle_admin_post(body)
         else:
@@ -1556,6 +1561,100 @@ class ThalamusHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_error(502, str(e))
 
+    def _handle_berserker(self, body: dict):
+        """狂暴模式 — 多模型平行分析 + Aggregator 汇总"""
+        prompt = body.get("prompt", "")
+        if not prompt:
+            self._send_error(400, "Missing 'prompt' field")
+            return
+
+        confirm = body.get("confirm", False)
+
+        try:
+            if not confirm:
+                # 阶段 1: 估算 Token
+                est_chars = len(prompt) * 6  # 3 models × 2 responses each
+                est_tokens = max(1000, est_chars // 2)
+                est_cost = est_tokens / 1_000_000 * 0.014  # deepseek rate
+                self._send_json(200, {
+                    "stage": "estimate",
+                    "prompt": prompt[:200],
+                    "estimated_tokens": est_tokens,
+                    "estimated_cost_usd": round(est_cost, 6),
+                    "estimated_time_s": 45,
+                    "confirm_required": True,
+                    "confirm_url": "/v1/berserker",
+                    "message": f"该请求预计消耗 ~{est_tokens} tokens (≈${est_cost:.6f})，约 45s，发送相同请求并带 confirm=true 确认执行"
+                })
+                return
+
+            # 阶段 2: 执行多模型分析
+            log(f"BERSERKER: starting multi-analysis for '{prompt[:60]}...'")
+            analysis_result = multi_analysis(prompt, max_tokens=body.get("max_tokens", 2048))
+
+            if analysis_result.get("error_count", 0) > 0:
+                self._send_json(502, {"error": "Multi-analysis failed", "details": analysis_result.get("errors", {})})
+                return
+
+            # 阶段 3: Aggregator 汇总
+            log("BERSERKER: aggregating perspectives...")
+            perspectives = analysis_result["perspectives"]
+            agg_content = "\n\n".join(
+                f"## {label.upper()}\n{perspectives[label]}"
+                for label in ["code", "reasoning", "creative"]
+            )
+
+            agg_prompt = f"""你是一个资深的策略汇总专家。以下是对同一个问题从 3 个不同角度分析的结论。
+
+你的任务：综合 3 份分析，写出一份结构清晰、没有冗余、有深度但没有废话的最终报告。
+不要逐条列"角度A说..."，而是融合它们，按主题组织。
+
+## 分析主题
+{prompt}
+
+{agg_content}
+
+请输出综合报告（不需要再分段展示各视角的内容）："""
+
+            agg_body = {
+                "model": DEFAULT_MODEL,
+                "messages": [
+                    {"role": "system", "content": "你是一个资深的策略汇总专家。擅长融合多角度观点，输出简洁、有洞察力的综合报告。"},
+                    {"role": "user", "content": agg_prompt}
+                ],
+                "max_tokens": body.get("max_tokens", 3072) or 3072,
+                "stream": False,
+            }
+
+            agg_key = _resolve_key(DEFAULT_KEY_ENV)
+            agg_data = _make_request(DEFAULT_ENDPOINT, agg_body, agg_key, stream=False)
+            agg_content = agg_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            total_tokens = (
+                analysis_result.get("count", 0) +
+                agg_data.get("usage", {}).get("total_tokens", 0)
+            )
+
+            log(f"BERSERKER: done — {analysis_result.get('count', 0)} perspectives, {len(agg_content)} chars aggregated")
+            self._send_json(200, {
+                "stage": "complete",
+                "prompt": prompt[:200],
+                "perspectives": {
+                    k: {"content": v, "chars": len(v)}
+                    for k, v in perspectives.items()
+                },
+                "aggregated": agg_content,
+                "total_perspectives": analysis_result.get("count", 0),
+                "aggregated_chars": len(agg_content),
+                "estimated_tokens": body.get("_estimated_tokens", 0),
+            })
+
+        except Exception as e:
+            log(f"BERSERKER ERROR: {e}")
+            import traceback
+            log(traceback.format_exc())
+            self._send_error(502, f"Berserker failed: {e}")
+
     # ─── Admin panel handlers ───
 
     def _check_admin_auth(self) -> bool:
@@ -1579,6 +1678,19 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self.wfile.write(html.encode())
         except Exception as e:
             self._send_error(500, f"Failed to load admin page: {e}")
+
+    TERMINAL_HTML_PATH = Path("/root/api-hvh-terminal/index.html")
+
+    def _serve_terminal_html(self):
+        try:
+            html = self.TERMINAL_HTML_PATH.read_text(encoding="utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html.encode())))
+            self.end_headers()
+            self.wfile.write(html.encode())
+        except Exception as e:
+            self._send_error(500, f"Failed to load terminal page: {e}")
 
     def _handle_admin_get(self):
         if self.path in ("/admin/", "/admin"):
