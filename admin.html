@@ -1160,6 +1160,7 @@ function probeKeyAddModal(){
 // ═══ CARDS ═══
 function renderCards(bal){
   var calls=(st&&st.calls)||0, dur=(st&&st.uptime_seconds)||0, prov=Object.keys(st&&st.by_provider||{}).length, fb=(st&&st.fallbacks)||0
+  var bc=(st&&st.berserker_calls)||0, bt=(st&&st.berserker_tokens)||0, bp=(st&&st.berserker_perspectives)||0
   var h='<div class="card"><div class="icon">📊</div><div class="label">总调度</div><div class="value blue">'+calls+'</div><div class="sub">次请求</div></div>'
   h+='<div class="card"><div class="icon">⏱️</div><div class="label">运行时长</div><div class="value purple">'+fmtDur(dur)+'</div><div class="sub">持续运行</div></div>'
   h+='<div class="card"><div class="icon">🔌</div><div class="label">活跃 Provider</div><div class="value green">'+prov+'</div><div class="sub">个模型</div></div>'
