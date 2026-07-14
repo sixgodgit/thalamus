@@ -873,9 +873,19 @@ td[contenteditable]:focus {
               <div class="field"><label>密钥</label><select id="fb_key" onchange="onKeySelect('fb'); onCfgChange('fb'); updateChain()"></select></div>
             </div>
             <div class="field-row-2">
-              <div class="field"><label>端点</label><input id="fb_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(0,0,0,.4)"></div>
+              <div class="field probe-group">
+                <label>端点</label>
+                <input id="fb_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(0,0,0,.4)">
+                <button class="probe-btn" id="fb_probeBtn" onclick="probeModels('fb')" disabled>🔍 探测</button>
+              </div>
             </div>
+            <div id="fb_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
           </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-top:16px;padding:0 16px 16px" id="cfgSaveBar">
+          <button class="btn-primary" onclick="saveConfigFull()" style="flex:1;padding:10px;font-size:13px">💾 保存设置</button>
+          <button onclick="fetchAll()" style="padding:10px 16px;font-size:13px;background:var(--bg-glass);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer">↻ 撤销更改</button>
         </div>
       </div>
     </div>
@@ -1101,6 +1111,7 @@ function probeModels(ctx) {
   if(ctx==='rm'){keyAlias=document.getElementById('rm_key').value; btn=document.getElementById('rm_probeBtn'); resultEl=document.getElementById('rm_probeResult'); modelInput=document.getElementById('rm_model')}
   else if(ctx==='pc'){keyAlias=document.getElementById('pc_key').value; btn=document.getElementById('pc_probeBtn'); resultEl=document.getElementById('pc_probeResult'); modelInput=document.getElementById('pc_model')}
   else if(ctx==='def'){keyAlias=document.getElementById('def_key').value; btn=document.getElementById('def_probeBtn'); resultEl=document.getElementById('def_probeResult'); modelInput=document.getElementById('def_model')}
+  else if(ctx==='fb'){keyAlias=document.getElementById('fb_key').value; btn=document.getElementById('fb_probeBtn'); resultEl=document.getElementById('fb_probeResult'); modelInput=document.getElementById('fb_model')}
   else if(ctx==='km'){probeKeyAddModal(); return}
   else return
   if(!keyAlias){toast('请先选择密钥',true); return}
