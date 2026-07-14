@@ -1,52 +1,67 @@
 {
   "routes": [
     {
-      "label": "mimo",
-      "model": "mimo-v2.5-pro",
-      "provider": "xiaomi",
-      "key_env": "xiaomi",
-      "endpoint": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
-      "pattern": "代码|编程|写程序|重构|部署|deploy|运维|server|nginx|docker|systemctl|ssh|git|commit|PR|config|shell|bash|脚本|修复|报错|error|exception|traceback|日志分析|调试|debug|cron|备份|安装|apt|pip|npm|编译|make|测试|test|pytest|写一|写个|实现|算法|排序|函数|def |class |接口|API|SQL|数据库|python|java|golang|rust|node|react|vue",
+      "label": "longcat",
+      "model": "LongCat-2.0",
+      "provider": "meituan",
+      "key_env": "longcat",
+      "endpoint": "https://api.longcat.chat/openai/v1/chat/completions",
+      "pattern": "代码|编程|重构|部署|deploy|编译|make|nginx|docker|systemctl|ssh|git|commit|PR|shell|bash|脚本|修复|报错|error|exception|traceback|日志分析|调试|debug|apt|pip|npm|pytest|def |class |python|java|golang|rust|node|react|vue|k8s|kubernetes|jenkins|ci/cd|ansible|terraform|yaml|Dockerfile|docker-compose",
       "usage": "code",
       "proxy": false
     },
     {
       "label": "claude",
-      "model": "claude-sonnet-4-20250514",
+      "model": "claude-sonnet-5",
       "provider": "anthropic",
       "key_env": "中转海外",
       "endpoint": "https://token173.com/v1/chat/completions",
       "pattern": "分析|对比|比较|推理|为什么|原因|根因|深度|论证|评估|策略|方案|设计架构|优缺点|权衡|决策|审查|审计|review|评审|探讨|解读|预测|利弊|推荐|建议|看法|观点|本质|根源|原理|机制|模型选择|技术选型|架构设计",
       "usage": "reason",
-      "proxy": false
+      "proxy": true
     },
     {
       "label": "mimo",
       "model": "mimo-v2.5",
-      "provider": "",
-      "key_env": "xiaomi",
-      "endpoint": "https://token-plan-cn.xiaomimimo.com/v1",
+      "provider": "zhongzhuan",
+      "key_env": "中转海外",
+      "endpoint": "https://token173.com/v1/chat/completions",
       "pattern": "图片|截图|照片|图像|看图|OCR|识别图|vision|视觉|多媒体|画图|绘制|渲染|流程图|架构图|UML|图表|图像分析|画面|这张图|看看这",
-      "usage": "reason",
-      "proxy": false
+      "usage": "vision",
+      "proxy": true
+    },
+    {
+      "label": "ds",
+      "model": "deepseek-v4-flash",
+      "provider": "ds",
+      "key_env": "deepseek",
+      "endpoint": "https://api.deepseek.com/v1/chat/completions",
+      "pattern": "",
+      "usage": "daily"
     }
   ],
   "default": {
     "model": "deepseek-v4-flash",
-    "provider": "deepseek",
+    "provider": "",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
     "key_env": "deepseek"
   },
+  "longcat": {
+    "model": "LongCat-2.0",
+    "provider": "longcat",
+    "endpoint": "https://api.longcat.chat/openai/v1/chat/completions",
+    "key_env": "longcat"
+  },
   "fallback": {
-    "model": "glm-4.7",
-    "provider": "glm",
-    "endpoint": "https://token173.com/v1",
-    "key_env": "中转海外"
+    "model": "longcat",
+    "provider": "deepseek",
+    "endpoint": "https://api.longcat.chat/openai/v1/chat/completions",
+    "key_env": "longcat"
   },
   "precheck": {
     "enabled": true,
     "model": "deepseek-v4-flash",
-    "provider": "deepseek",
+    "provider": "",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
     "key_env": "deepseek"
   }

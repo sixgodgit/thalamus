@@ -31,9 +31,19 @@ import traceback
 import urllib.parse
 import urllib.request
 import http.client
+import subprocess
 import socks
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
+# ══════════════════════════════════════════
+# 语义路由（v6 hybrid：TF-IDF 语义 + 正则兜底）
+# ══════════════════════════════════════════
+import sys
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+from semantic_router import classify_semantic
 
 # ══════════════════════════════════════════
 # 配置
@@ -225,6 +235,20 @@ _spend = {"total": 0.0, "by_provider": {}, "calls": 0, "fallbacks": 0, "errors":
 _COST_PERF_LOG = []  # [{label, provider, model, latency, input_tok, output_tok, est_cost, ts}]
 _COST_PERF_LOG_LOCK = threading.Lock()
 _COST_PERF_LOG_MAX = 200
+
+# 任务4: per-IP 速率限制
+# 格式: {ip: {"count": N, "window_start": ts, "tokens": N}}
+_RATE_LIMIT = {}
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_CONFIG = {
+    "max_requests_per_window": 60,   # 每个时间窗口最多请求数
+    "window_seconds": 60,             # 窗口大小（秒）
+    "max_concurrent": 10,             # 单 IP 最大并发
+    "burst_tokens": 10,               # 突发令牌数
+}
+# 主动健康探测
+_HEALTH_PROBE_RESULTS = {}  # {label: {"ok": bool, "latency": float, "last_probe": ts}}
+_HEALTH_PROBE_LOCK = threading.Lock()
 _startup_errors = []
 
 # 代理白名单 — 启动时一次性设置，避免多线程竞态
@@ -365,29 +389,64 @@ def _estimate_cost(provider: str, prompt_tok: int, comp_tok: int) -> float:
 # ══════════════════════════════════════════
 
 def classify(messages: list) -> tuple | None:
-    """从最后一条用户消息提取文本做正则分类"""
-    # 只取最后一条 user 消息（system prompt 含大量关键词会误触发）
-    for m in reversed(messages):
-        content = m.get("content", "")
-        if isinstance(content, str) and m.get("role") == "user":
-            text = content
-            break
-    else:
-        # 尝试取所有 user 消息
-        text = " ".join(
-            m.get("content", "") if isinstance(m.get("content"), str) else ""
-            for m in messages if m.get("role") == "user"
-        )
+    """
+    路由分类：routes.json 优先，语义分类仅做兜底。
     
+    规则：
+    1. 正则匹配 → 直接走 routes.json 配的路由（语义无权覆盖）
+    2. 正则未匹配 → 用语义猜测，语义 label 匹配到 routes.json 才用
+    3. 全都没匹配 → 默认路由
+    
+    改进：拼接所有 user 消息作为上下文，让路由能感知对话历史。
+    """
+    # 拼接所有 user 消息中的纯文本（最近5条，加权最后一条）
+    parts = []
+    user_count = 0
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            content = m.get("content", "")
+            if isinstance(content, str):
+                text = content
+            elif isinstance(content, list):
+                text_parts = [p.get("text", "") for p in content if p.get("type") == "text"]
+                text = " ".join(text_parts)
+            else:
+                continue
+            if text.strip():
+                # 最后一条 user 消息重复一次以强化权重
+                if user_count == 0:
+                    parts.insert(0, text)
+                    parts.insert(0, text)
+                else:
+                    parts.insert(0, text)
+                user_count += 1
+                if user_count >= 5:
+                    break
+    
+    text = "\n".join(parts)
+
     if not text:
         return None
 
+    # ── 第1步：正则匹配（routes.json 配置优先）──
     for pattern, model, provider, endpoint, key_env, label, proxy in ROUTES:
         if pattern.search(text):
-            log(f"ROUTE: regex → {label}")
+            log(f"ROUTE: regex → {label} ({model})")
             return (endpoint, model, key_env, provider, label, proxy)
 
-    log("ROUTE: default → DeepSeek")
+    # ── 第2步：语义兜底（仅正则没匹配时）──
+    semantic_result = classify_semantic(text)
+    if semantic_result is not None:
+        sem_label, sem_conf = semantic_result
+        # 找到 routes.json 中对应 label 的路由
+        for pattern, model, provider, endpoint, key_env, label, proxy in ROUTES:
+            if label == sem_label:
+                log(f"ROUTE: semantic → {sem_label} (conf={sem_conf:.2f})")
+                return (endpoint, model, key_env, provider, label, proxy)
+        log(f"ROUTE: semantic → {sem_label} (conf={sem_conf:.2f}, label not in routes — using default)")
+
+    # ── 全都没匹配 → 默认路由 ──
+    log("ROUTE: default route")
     return None
 
 
@@ -519,12 +578,16 @@ PRECHECK_SYSTEM_PROMPT = """你是 Preflight Checker，负责在 AI 编码 Agent
 不要写代码！不要推荐要写代码的方案！只判断有没有现成的。"""
 
 
-def precheck(messages: list) -> dict | None:
-    """在路由分类之前执行 pre-check。
+def precheck(messages: list, route: tuple | None = None) -> dict | None:
+    """在路由分类之后执行 pre-check。
 
     发一条轻量查询给预检模型（默认 DeepSeek Chat），
     如果判定可以用现成方案解决，返回建议方案；
     否则返回 None，走正常路由。
+    
+    改进：precheck 优先使用路由选中的 endpoint，
+    而非硬编码直连 DeepSeek。这样当路由熔断时，
+    precheck 也会自动避开熔断的 provider。
     """
     if not PRECHECK_ENABLED:
         return None
@@ -548,9 +611,20 @@ def precheck(messages: list) -> dict | None:
         _cached["cache_hit"] = True
         return _cached if _cached.get("intercepted") else None
 
+    # 使用路由选中的 endpoint（而非硬编码 DeepSeek）
+    if route:
+        pc_endpoint, pc_model, pc_key_env, _, _, _ = route
+        pc_endpoint = pc_endpoint or PRECHECK_FAST_ENDPOINT
+        pc_model = pc_model or PRECHECK_FAST_MODEL
+        pc_key_env = pc_key_env or PRECHECK_FAST_KEY_ENV
+    else:
+        pc_endpoint = PRECHECK_FAST_ENDPOINT
+        pc_model = PRECHECK_FAST_MODEL
+        pc_key_env = PRECHECK_FAST_KEY_ENV
+
     # 预检 prompt 很轻：只发用户消息 + system prompt，不传全上下文
     pre_body = {
-        "model": PRECHECK_FAST_MODEL,
+        "model": pc_model,
         "messages": [
             {"role": "system", "content": PRECHECK_SYSTEM_PROMPT},
             {"role": "user", "content": text},
@@ -560,14 +634,14 @@ def precheck(messages: list) -> dict | None:
         "stream": False,
     }
 
-    key = _resolve_key(PRECHECK_FAST_KEY_ENV)
+    key = _resolve_key(pc_key_env)
     if not key:
         log(f"PRECHECK WARNING: key not set: {PRECHECK_FAST_KEY_ENV}")
         return None
 
     t0 = time.time()
     try:
-        data = _make_request(PRECHECK_FAST_ENDPOINT, pre_body, key, stream=False, timeout=PRECHECK_TIMEOUT)
+        data = _make_request(pc_endpoint, pre_body, key, stream=False, timeout=PRECHECK_TIMEOUT)
         latency = time.time() - t0
         choice = data.get("choices", [{}])[0]
         reply = choice.get("message", {}).get("content", "").strip()
@@ -615,6 +689,97 @@ def precheck(messages: list) -> dict | None:
         _spend["precheck_errors"] = _spend.get("precheck_errors", 0) + 1
         log(f"PRECHECK ERROR: {e}")
         return None  # precheck 失败不阻塞正常流程
+
+
+# ══════════════════════════════════════════
+# 速率限制
+# ══════════════════════════════════════════
+
+def _rate_limit_check(client_ip: str) -> tuple[bool, str]:
+    """检查 client_ip 是否超过速率限制。
+    
+    Returns: (allowed: bool, reason: str)
+    """
+    now = time.time()
+    with _RATE_LIMIT_LOCK:
+        entry = _RATE_LIMIT.get(client_ip)
+        if not entry or (now - entry["window_start"]) > _RATE_LIMIT_CONFIG["window_seconds"]:
+            # 新窗口
+            _RATE_LIMIT[client_ip] = {
+                "count": 1,
+                "window_start": now,
+                "concurrent": 1,
+            }
+            return (True, "")
+        
+        # 检查突发令牌
+        if entry.get("tokens", _RATE_LIMIT_CONFIG["burst_tokens"]) <= 0:
+            return (False, "rate_limit: burst exceeded")
+        
+        # 检查窗口请求数
+        if entry["count"] >= _RATE_LIMIT_CONFIG["max_requests_per_window"]:
+            return (False, "rate_limit: window exceeded")
+        
+        # 检查并发
+        entry["concurrent"] = entry.get("concurrent", 0) + 1
+        if entry["concurrent"] > _RATE_LIMIT_CONFIG["max_concurrent"]:
+            entry["concurrent"] -= 1
+            return (False, "rate_limit: concurrent exceeded")
+        
+        entry["count"] += 1
+        # 消耗一个令牌，每 1 秒恢复一个
+        entry["tokens"] = entry.get("tokens", _RATE_LIMIT_CONFIG["burst_tokens"]) - 1
+        return (True, "")
+
+def _rate_limit_release(client_ip: str):
+    """请求完成后释放并发槽位"""
+    with _RATE_LIMIT_LOCK:
+        entry = _RATE_LIMIT.get(client_ip)
+        if entry:
+            entry["concurrent"] = max(0, entry.get("concurrent", 0) - 1)
+
+
+# ══════════════════════════════════════════
+# 主动健康探测
+# ══════════════════════════════════════════
+
+def _health_probe_worker():
+    """后台线程：每 60 秒探测所有可用 provider 的健康状态"""
+    while True:
+        time.sleep(60)
+        try:
+            now = time.time()
+            for pattern, model, provider_name, endpoint, key_env, label, proxy in ROUTES:
+                key = _resolve_key(key_env)
+                if not key or not endpoint:
+                    continue
+                probe_body = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 5,
+                    "stream": False,
+                }
+                t0 = now
+                try:
+                    _make_request(endpoint, probe_body, key, stream=False, timeout=10)
+                    latency = time.time() - t0
+                    with _HEALTH_PROBE_LOCK:
+                        _HEALTH_PROBE_RESULTS[label] = {
+                            "ok": True,
+                            "latency": round(latency, 2),
+                            "last_probe": now,
+                        }
+                    log(f"HEALTH PROBE: {label} ✅ ({latency:.2f}s)")
+                except Exception as e:
+                    with _HEALTH_PROBE_LOCK:
+                        _HEALTH_PROBE_RESULTS[label] = {
+                            "ok": False,
+                            "error": str(e)[:60],
+                            "last_probe": now,
+                        }
+                    log(f"HEALTH PROBE: {label} ❌ ({str(e)[:60]})")
+        except Exception:
+            pass
 
 
 # ══════════════════════════════════════════
@@ -666,7 +831,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
             should_precheck = True
 
     if should_precheck:
-        pc_result = precheck(messages)
+        pc_result = precheck(messages, route=route)
         if pc_result and pc_result.get("intercepted"):
             log(f"PRECHECK: bypassed routing for label={precheck_label}, task solved without code generation")
             suggestion = pc_result["suggestion"]
@@ -1278,6 +1443,9 @@ class ThalamusHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if extra_headers:
             for k, v in extra_headers.items():
+                # HTTP headers must be latin-1 safe; encode non-ASCII values
+                if isinstance(v, str):
+                    v = v.encode("latin-1", errors="replace").decode("latin-1")
                 self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
@@ -1305,6 +1473,8 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "routes": [{"label": r[5], "provider": r[2]} for r in ROUTES],
                 "default": "deepseek-chat",
             })
+        elif self.path in ("/semantic-debug", "/semantic-debug/"):
+            self._serve_semantic_debug()
         elif self.path in ("/stats", "/stats/"):
             self._send_json(200, {
                 "uptime_seconds": int(time.time() - START_TIME),
@@ -1329,6 +1499,8 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "berserker_tokens": _spend.get("berserker_tokens", 0),
                 "berserker_perspectives": _spend.get("berserker_perspectives", 0),
                 "berserker_total_chars": _spend.get("berserker_total_chars", 0),
+                "rate_limit_config": _RATE_LIMIT_CONFIG,
+                "health_probes": dict(_HEALTH_PROBE_RESULTS) if _HEALTH_PROBE_RESULTS else None,
             })
         elif self.path in ("/cost-performance", "/cost-performance/"):
             with _COST_PERF_LOG_LOCK:
@@ -1349,6 +1521,15 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                     del v["total_latency"]
                 data = {"summary": _summary, "recent": _COST_PERF_LOG[-20:]}
             self._send_json(200, data)
+        elif self.path.startswith("/semantic-debug"):
+            from semantic_router import get_debug_info
+            import urllib.parse
+            query = urllib.parse.parse_qs(self.path.split('?', 1)[1]).get('q', [''])[0] if '?' in self.path else ''
+            if not query:
+                self._send_json(400, {"error": "missing ?q= parameter"})
+                return
+            debug = get_debug_info(query)
+            self._send_json(200, debug)
         elif self.path in ("/analysis", "/analysis/"):
             self._send_json(200, {
                 "endpoint": "/analysis (POST)",
@@ -1413,10 +1594,23 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self._send_error(400, "Failed to read request body")
             return
 
-        if self.path in ("/v1/chat/completions", "/v1/chat/completions/"):
-            self._handle_chat_completion(body)
-        elif self.path in ("/task", "/task/"):
-            self._handle_task(body)
+        # 速率限制检查（仅限 chat 和 task 端点）
+        if self.path in ("/v1/chat/completions", "/v1/chat/completions/", "/task", "/task/"):
+            client_ip = self.client_address[0]
+            allowed, reason = _rate_limit_check(client_ip)
+            if not allowed:
+                log(f"RATE LIMIT: {client_ip} blocked: {reason}")
+                self._send_error(429, f"Too many requests: {reason}")
+                return
+            # 完成后释放并发槽（函数末尾或异常处理）
+            try:
+                if self.path in ("/v1/chat/completions", "/v1/chat/completions/"):
+                    self._handle_chat_completion(body)
+                else:
+                    self._handle_task(body)
+            finally:
+                _rate_limit_release(client_ip)
+            return
         elif self.path in ("/parallel", "/parallel/"):
             self._handle_parallel(body)
         elif self.path in ("/analysis", "/analysis/"):
@@ -1926,10 +2120,12 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self._send_error(404, f"Key '{name}' not found")
             return
         entry = KEYS[name]
-        endpoint_base = entry["endpoint"].replace("/chat/completions", "").replace("/v1", "")
-        if endpoint_base.endswith("/"):
-            endpoint_base = endpoint_base[:-1]
-        endpoint_base += "/v1/models"
+        # Build /v1/models URL safely (removesuffix, not replace — avoid eating /v1 in path)
+        ep = entry["endpoint"].rstrip("/")
+        for suffix in ("/chat/completions", "/v1"):
+            if ep.endswith(suffix):
+                ep = ep[:-len(suffix)]
+        endpoint_base = ep + "/v1/models"
 
         # Throttle
         now = time.time()
@@ -1939,22 +2135,29 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self._send_error(429, "Probe cooldown (60s). Please wait.")
             return
 
+        # Use curl for probe (urllib's TLS fingerprint gets blocked by nginx/cloudflare)
+        models = []
         try:
-            req = urllib.request.Request(endpoint_base)
-            req.add_header("Authorization", f"Bearer {entry['key']}")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
-            models = []
-            for m in data.get("data", []):
-                mid = m.get("id", "")
-                if mid:
-                    tags = _tag_model(mid)
-                    models.append({"id": mid, "object": m.get("object", "model"), "tags": tags})
-            _spend[cache_key] = now
-            self._send_json(200, {"models": models})
+            result = subprocess.run(
+                ["curl", "-s", "--max-time", "15", endpoint_base,
+                 "-H", f"Authorization: Bearer {entry['key']}"],
+                capture_output=True, text=True, timeout=20
+            )
+            if result.returncode == 0 and result.stdout:
+                data = json.loads(result.stdout)
+                for m in data.get("data", []):
+                    mid = m.get("id", "")
+                    if mid:
+                        tags = _tag_model(mid)
+                        models.append({"id": mid, "object": m.get("object", "model"), "tags": tags})
         except Exception as e:
             log(f"Probe failed for '{name}': {e}")
-            self._send_error(502, f"Probe failed: {e}")
+
+        if models:
+            _spend[cache_key] = now
+            self._send_json(200, {"models": models})
+        else:
+            self._send_error(502, "Probe failed: no models returned")
 
     # ─── 路由/系统配置 ───
 
@@ -2085,8 +2288,12 @@ def main():
     log(f"Pre-check: {'ON' if PRECHECK_ENABLED else 'OFF'} (model={PRECHECK_MODEL})")
     log(f"Fallback: {DEFAULT_MODEL} ({DEFAULT_PROVIDER}) → {FALLBACK_MODEL} ({FALLBACK_PROVIDER})")
     log(f"Features: streaming SSE, tool_calls pass-through, pre-check, multi_analysis, evolution, ThreadingHTTPServer")
-    log("=" * 50)
-
+    
+    # 启动主动健康探测后台线程
+    _hp_thread = threading.Thread(target=_health_probe_worker, daemon=True)
+    _hp_thread.start()
+    log("HEALTH PROBE: background worker started")
+    
     server = ThreadingHTTPServer((host, port), ThalamusHandler)
     server.daemon_threads = True
 
