@@ -134,10 +134,10 @@ Thalamus provides multi-dimensional observability out of the box:
 ### Health Probe Output (example)
 
 ```
-longcat   ✅  1.07s
-claude    ✅  2.92s
-mimo      ✅  4.19s
-ds        ✅  5.26s
+code-engine   ✅  1.07s
+analysis      ✅  2.92s
+vision        ✅  4.19s
+default       ✅  5.26s
 ```
 
 Active health probes run every 60 seconds across all configured routes. Results are exposed in `/stats` for monitoring integration.
