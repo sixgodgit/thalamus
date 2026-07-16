@@ -736,6 +736,7 @@ td[contenteditable]:focus {
       </div>
       <div class="actions">
         <button onclick="fetchAll()">🔄 刷新</button>
+        <button onclick="resetTokenStats()" style="margin-left:6px;background:var(--red);color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer">🔄 重置计数</button>
       </div>
     </div>
 
@@ -1025,7 +1026,9 @@ function doLogin() {
   var pwd=document.getElementById('pwdInput').value; if(!pwd) return
   var btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='验证中...'
   api('POST','/admin/api/login',{password:pwd}).then(function(d){
-    TOKEN=d.token; document.getElementById('loginWrap').style.display='none'
+    TOKEN=d.token
+    try{localStorage.setItem('thalamus_token',d.token)}catch(e){}
+    document.getElementById('loginWrap').style.display='none'
     document.getElementById('app').className='app show'
     fetchAll()
   }).catch(function(e){
@@ -1034,9 +1037,15 @@ function doLogin() {
   })
 }
 function doLogout() {
-  TOKEN = null; document.getElementById('loginWrap').style.display = 'flex'
+  TOKEN = null
+  try{localStorage.removeItem('thalamus_token')}catch(e){}
+  document.getElementById('loginWrap').style.display = 'flex'
   document.getElementById('app').className='app'
+  document.getElementById('pwdInput').value=''; document.getElementById('loginErr').textContent=''
 }
+
+// Auto-restore token from localStorage on load
+try{var saved=localStorage.getItem('thalamus_token'); if(saved){TOKEN=saved; document.getElementById('loginWrap').style.display='none'; document.getElementById('app').className='app show'; fetchAll()}}catch(e){}
 
 // ═══ SIDEBAR NAV ═══
 document.querySelectorAll('.s-nav button').forEach(function(t){
@@ -1076,7 +1085,15 @@ function restartService() {
   api('POST','/admin/api/restart').then(function(){toast('已发送重启指令，等待服务恢复...')}).catch(function(e){toast(e.message,true)})
   setTimeout(function(){if(btn){btn.disabled=false;btn.innerHTML='🔁'}; fetchAll()},5000)
 }
-
+function resetTokenStats(){
+  if(!confirm('确认重置 Token 统计计数器？\\n\\n当前总数将被清零（旧数据仍保留在日志中）。'))return
+  var btn=event&&event.target; if(btn){btn.disabled=true; btn.textContent='⏳...'}
+  api('GET','/stats/reset').then(function(d){
+    var p=d.previous||{}
+    toast('已重置。之前: '+fmtTok(p.total_tokens||0)+', '+Object.keys(p.token_by_label||{}).length+' 个路由')
+    fetchAll()
+  }).catch(function(e){toast(e.message,true)}).finally(function(){if(btn)btn.disabled=false})
+}
 function refreshKeySelector() {
   KEYS_SELECTOR={}; if(!cfg) return
   if(cfg.custom_keys) for(var k in cfg.custom_keys){var v=cfg.custom_keys[k]; KEYS_SELECTOR[k]={endpoint:v.endpoint||'',type:'custom',key:v.key||''}}
@@ -1143,9 +1160,16 @@ function pickModel(el){
   document.getElementById(miId).value=mid
   var k=KEYS_SELECTOR[ka]
   if(k){
-    var prov=mid.indexOf('/')>0?mid.split('/')[0]:''
+    // Provider: parse from modelID (e.g. "openai/gpt-4o" → "openai"), fallback to key alias
+    var prov=mid.indexOf('/')>0?mid.split('/')[0]:ka
     var prEl=document.getElementById(miId.replace('model','provider'))
     if(prEl)prEl.value=prov
+  }
+  // Auto-fill route name (label) from model name
+  var nmEl=document.getElementById('rm_name')
+  if(nmEl&&!nmEl.value.trim()){
+    var label=mid.split('/').pop().split('-').map(function(s){return s.charAt(0).toUpperCase()+s.slice(1)}).join(' ')
+    nmEl.value=label
   }
   document.querySelectorAll('.probe-models .m-card').forEach(function(c){c.classList.remove('sel')})
   el.classList.add('sel')
@@ -1172,10 +1196,12 @@ function probeKeyAddModal(){
 function renderCards(bal){
   var calls=(st&&st.calls)||0, dur=(st&&st.uptime_seconds)||0, prov=Object.keys(st&&st.by_provider||{}).length, fb=(st&&st.fallbacks)||0
   var bc=(st&&st.berserker_calls)||0, bt=(st&&st.berserker_tokens)||0, bp=(st&&st.berserker_perspectives)||0
+  var tt=(st&&st.total_tokens)||0, tbp=(st&&st.token_by_label)||{}
   var h='<div class="card"><div class="icon">📊</div><div class="label">总调度</div><div class="value blue">'+calls+'</div><div class="sub">次请求</div></div>'
   h+='<div class="card"><div class="icon">⏱️</div><div class="label">运行时长</div><div class="value purple">'+fmtDur(dur)+'</div><div class="sub">持续运行</div></div>'
   h+='<div class="card"><div class="icon">🔌</div><div class="label">活跃 Provider</div><div class="value green">'+prov+'</div><div class="sub">个模型</div></div>'
   h+='<div class="card"><div class="icon">🔄</div><div class="label">Fallback</div><div class="value '+(fb>0?'yellow':'green')+'">'+fb+'</div><div class="sub">'+(fb>0?'次降级':'无降级')+'</div></div>'
+  h+='<div class="card"><div class="icon">🔢</div><div class="label">Token 总量</div><div class="value blue">'+fmtTok(tt)+'</div><div class="sub">'+(Object.keys(tbp).length||'0')+' 个路由</div></div>'
   if(bc>0){
     h+='<div class="card"><div class="icon">⚡</div><div class="label">狂暴模式</div><div class="value yellow">'+bc+'</div><div class="sub">'+bc+'次 · '+fmtTok(bt)+'</div></div>'
     h+='<div class="card"><div class="icon">👁️</div><div class="label">总视角数</div><div class="value blue">'+bp+'</div><div class="sub">'+Math.round(bt/(bc||1))+' tok/次</div></div>'

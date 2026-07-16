@@ -8,41 +8,42 @@
       "endpoint": "https://api.longcat.chat/openai/v1/chat/completions",
       "pattern": "代码|编程|重构|部署|deploy|编译|make|nginx|docker|systemctl|ssh|git|commit|PR|shell|bash|脚本|修复|报错|error|exception|traceback|日志分析|调试|debug|apt|pip|npm|pytest|def |class |python|java|golang|rust|node|react|vue|k8s|kubernetes|jenkins|ci/cd|ansible|terraform|yaml|Dockerfile|docker-compose",
       "usage": "code",
-      "proxy": false
+      "proxy": false,
+      "fallbacks": [
+        {"model": "deepseek-v4-flash", "provider": "deepseek", "key_env": "deepseek", "endpoint": "https://api.deepseek.com/v1/chat/completions"}
+      ]
     },
     {
-      "label": "claude",
+      "label": "Claude Sonnet 5",
       "model": "claude-sonnet-5",
-      "provider": "anthropic",
+      "provider": "中转海外",
       "key_env": "中转海外",
       "endpoint": "https://token173.com/v1/chat/completions",
-      "pattern": "分析|对比|比较|推理|为什么|原因|根因|深度|论证|评估|策略|方案|设计架构|优缺点|权衡|决策|审查|审计|review|评审|探讨|解读|预测|利弊|推荐|建议|看法|观点|本质|根源|原理|机制|模型选择|技术选型|架构设计",
+      "pattern": "分析|对比|比较|推理|为什么|原因|根因|深度|论证|评估|策略|方案|设计架构|优缺点|权衡|决策|审查|审计|review|评审",
       "usage": "reason",
-      "proxy": true
+      "proxy": true,
+      "fallbacks": [
+        {"model": "gpt-4o-mini", "provider": "中转海外", "key_env": "中转海外", "endpoint": "https://token173.com/v1/chat/completions"},
+        {"model": "deepseek-v4-flash", "provider": "deepseek", "key_env": "deepseek", "endpoint": "https://api.deepseek.com/v1/chat/completions"}
+      ]
     },
     {
-      "label": "mimo",
-      "model": "mimo-v2.5",
-      "provider": "zhongzhuan",
+      "label": "Gpt 4o Mini",
+      "model": "gpt-4o-mini",
+      "provider": "中转海外",
       "key_env": "中转海外",
       "endpoint": "https://token173.com/v1/chat/completions",
-      "pattern": "图片|截图|照片|图像|看图|OCR|识别图|vision|视觉|多媒体|画图|绘制|渲染|流程图|架构图|UML|图表|图像分析|画面|这张图|看看这",
+      "pattern": "图片|截图|照片|图像|看图|OCR|识别图|vision|视觉|多媒体",
       "usage": "vision",
-      "proxy": true
-    },
-    {
-      "label": "ds",
-      "model": "deepseek-v4-flash",
-      "provider": "ds",
-      "key_env": "deepseek",
-      "endpoint": "https://api.deepseek.com/v1/chat/completions",
-      "pattern": "",
-      "usage": "daily"
+      "proxy": true,
+      "fallbacks": [
+        {"model": "deepseek-v4-flash", "provider": "deepseek", "key_env": "deepseek", "endpoint": "https://api.deepseek.com/v1/chat/completions"}
+      ]
     }
   ],
   "default": {
     "model": "deepseek-v4-flash",
-    "provider": "",
+    "provider": "deepseek",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
     "key_env": "deepseek"
   },
@@ -53,15 +54,15 @@
     "key_env": "longcat"
   },
   "fallback": {
-    "model": "longcat",
-    "provider": "deepseek",
+    "model": "LongCat-2.0",
+    "provider": "longcat",
     "endpoint": "https://api.longcat.chat/openai/v1/chat/completions",
     "key_env": "longcat"
   },
   "precheck": {
     "enabled": true,
     "model": "deepseek-v4-flash",
-    "provider": "",
+    "provider": "deepseek",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
     "key_env": "deepseek"
   }

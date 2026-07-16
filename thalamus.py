@@ -70,6 +70,7 @@ def _load_routes():
         # 路由规则 — 瀑布式，第一个命中即停止
         ROUTES = []
         for r in cfg.get("routes", []):
+            fbs = r.get("fallbacks", [])
             ROUTES.append((
                 re.compile(r["pattern"]),
                 r["model"],
@@ -78,6 +79,7 @@ def _load_routes():
                 r["key_env"],
                 r["label"],
                 r.get("proxy", False),
+                fbs,  # fallbacks list added
             ))
 
         # 默认路由
@@ -230,7 +232,7 @@ def _get_admin_password() -> str:
 
 START_TIME = time.time()
 _spend_lock = threading.Lock()
-_spend = {"total": 0.0, "by_provider": {}, "calls": 0, "fallbacks": 0, "errors": 0, "total_tokens": 0, "token_by_provider": {}}
+_spend = {"total": 0.0, "by_provider": {}, "calls": 0, "fallbacks": 0, "errors": 0, "total_tokens": 0, "token_by_provider": {}, "token_by_label": {}}
 # 任务6: 成本性能日志，记录每次调用的延迟和预估成本，不做路由选择（现有 routes.json 一个 label 只有一个候选）
 _COST_PERF_LOG = []  # [{label, provider, model, latency, input_tok, output_tok, est_cost, ts}]
 _COST_PERF_LOG_LOCK = threading.Lock()
@@ -429,20 +431,20 @@ def classify(messages: list) -> tuple | None:
         return None
 
     # ── 第1步：正则匹配（routes.json 配置优先）──
-    for pattern, model, provider, endpoint, key_env, label, proxy in ROUTES:
+    for pattern, model, provider, endpoint, key_env, label, proxy, fallbacks in ROUTES:
         if pattern.search(text):
             log(f"ROUTE: regex → {label} ({model})")
-            return (endpoint, model, key_env, provider, label, proxy)
+            return (endpoint, model, key_env, provider, label, proxy, fallbacks)
 
     # ── 第2步：语义兜底（仅正则没匹配时）──
     semantic_result = classify_semantic(text)
     if semantic_result is not None:
         sem_label, sem_conf = semantic_result
         # 找到 routes.json 中对应 label 的路由
-        for pattern, model, provider, endpoint, key_env, label, proxy in ROUTES:
+        for pattern, model, provider, endpoint, key_env, label, proxy, fallbacks in ROUTES:
             if label == sem_label:
                 log(f"ROUTE: semantic → {sem_label} (conf={sem_conf:.2f})")
-                return (endpoint, model, key_env, provider, label, proxy)
+                return (endpoint, model, key_env, provider, label, proxy, fallbacks)
         log(f"ROUTE: semantic → {sem_label} (conf={sem_conf:.2f}, label not in routes — using default)")
 
     # ── 全都没匹配 → 默认路由 ──
@@ -808,7 +810,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
         endpoint, model, key_env, provider, label, proxy = (
             DEFAULT_ENDPOINT, DEFAULT_MODEL, DEFAULT_KEY_ENV, DEFAULT_PROVIDER, "DeepSeek (long input)", False
         )
-        route = (endpoint, model, key_env, provider, label, proxy)
+        route = (endpoint, model, key_env, provider, label, proxy, [])  # 7-tuple with empty fallbacks
 
     # 1. 先分类（正则匹配，零成本）
     if not long_input:
@@ -864,7 +866,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
 
     # 3. 构建转发 body（替换 model 为路由目标，保留其他所有参数）
     if route:
-        endpoint, model, key_env, provider, label, proxy = route
+        endpoint, model, key_env, provider, label, proxy = route[:6]
     else:
         endpoint, model, key_env = DEFAULT_ENDPOINT, DEFAULT_MODEL, DEFAULT_KEY_ENV
         provider = DEFAULT_PROVIDER
@@ -873,9 +875,14 @@ def process(body: dict) -> tuple[str, bool, dict]:
 
     # 任务5: 路由熔断检查 — 在发起请求之前拦截
     if route and _circuit_is_tripped(label):
-        log(f"CIRCUIT: {label} is OPEN, skipping to fallback")
+        log(f"CIRCUIT: {label} is OPEN, trying fallbacks before default")
         _spend["circuit_breaker_skips"] = _spend.get("circuit_breaker_skips", 0) + 1
-        return _fallback_to_deepseek(body, is_stream)
+        # 不直接跳 DeepSeek，先走路由自身的 fallback 链
+        try:
+            return _try_route_fallbacks(route, body, is_stream, label)
+        except Exception:
+            # 全部 fallback 都失败 → 最后防线 DeepSeek
+            return _fallback_to_deepseek(body, is_stream)
 
     key = _resolve_key(key_env)
     if not key:
@@ -934,6 +941,7 @@ def process(body: dict) -> tuple[str, bool, dict]:
             with _spend_lock:
                 _spend["total_tokens"] += pt + ct
                 _spend["token_by_provider"][provider] = _spend["token_by_provider"].get(provider, 0) + pt + ct
+                _spend["token_by_label"][label] = _spend["token_by_label"].get(label, 0) + pt + ct
         choice = data.get("choices", [{}])[0]
         actual_model = data.get("model", model)
         choice_msg = choice.get("message", {})
@@ -986,9 +994,15 @@ def process(body: dict) -> tuple[str, bool, dict]:
         latency = time.time() - t0
         _record_error(provider, label, str(e), latency)
 
-        # 6. 如果不是默认路由，fallback 到 DeepSeek
+        # 6. 路由降级链：先试同级 fallback → 再试默认 DeepSeek → 最后 MiMo
         if route:
-            log(f"FALLBACK: {label} failed ({e}) → DeepSeek")
+            # 6a. 尝试路由自身 fallbacks（优先保持同类别能力）
+            try:
+                return _try_route_fallbacks(route, body, is_stream, label)
+            except Exception:
+                pass
+            # 6b. 全部 fallback 失败 → 默认 DeepSeek
+            log(f"FALLBACK: {label} fallbacks all failed → DeepSeek")
             evolution_learn(label, latency, success=False)
             return _fallback_to_deepseek(body, is_stream)
         else:
@@ -996,6 +1010,51 @@ def process(body: dict) -> tuple[str, bool, dict]:
             log(f"FALLBACK: DeepSeek failed ({e}) → MiMo Flash")
             evolution_learn("DeepSeek (default)", latency, success=False)
             return _fallback_to_mimo(body, is_stream)
+
+
+def _try_route_fallbacks(route: tuple, body: dict, is_stream: bool, label: str) -> tuple:
+    """尝试路由自身的 fallback 链，全部失败则抛出异常"""
+    import uuid as _uuid
+    fallbacks = route[6] if len(route) > 6 else []
+    if not fallbacks:
+        raise RuntimeError("no fallbacks configured")
+    for fb in fallbacks:
+        fb_model = fb.get("model", "")
+        fb_provider = fb.get("provider", "")
+        fb_key = fb.get("key_env", "")
+        fb_ep = fb.get("endpoint", "")
+        fb_label = f"{label} (fallback: {fb_model})"
+        log(f"FALLBACK: {label} failed, trying {fb_model}")
+        fb_key_val = _resolve_key(fb_key)
+        if not fb_key_val:
+            continue
+        fb_domain = urllib.parse.urlparse(fb_ep).hostname or ""
+        if not fb_domain:
+            continue
+        _set_noproxy(fb_domain)
+        fb_body = dict(body)
+        fb_body["model"] = fb_model
+        fb_data = _make_request(fb_ep, fb_body, fb_key_val, stream=False, use_socks=False)
+        fb_usage = fb_data.get("usage", {})
+        pt = fb_usage.get("prompt_tokens", 0)
+        ct = fb_usage.get("completion_tokens", 0)
+        if pt or ct:
+            with _spend_lock:
+                _spend["total_tokens"] += pt + ct
+                _spend["token_by_provider"][fb_provider] = _spend["token_by_provider"].get(fb_provider, 0) + pt + ct
+                _spend["token_by_label"][fb_label] = _spend["token_by_label"].get(fb_label, 0) + pt + ct
+        fb_choice = fb_data.get("choices", [{}])[0]
+        fb_actual = fb_data.get("model", fb_model)
+        log(f"CALL (fallback): {fb_label} | model={fb_actual} tok={pt}+{ct}")
+        response = {
+            "id": f"thalamus-{_uuid.uuid4().hex[:12]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": fb_actual,
+            "choices": [{"index": 0, "message": fb_choice.get("message", {}), "finish_reason": fb_choice.get("finish_reason", "stop")}],
+        }
+        return ("json", False, response)
+    raise RuntimeError(f"all {len(fallbacks)} fallback(s) failed")
 
 
 def _fallback_to_deepseek(body: dict, is_stream: bool) -> tuple:
@@ -1482,6 +1541,9 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "fallbacks": _spend["fallbacks"],
                 "errors": _spend["errors"],
                 "by_provider": dict(_spend["by_provider"]),
+                "total_tokens": _spend["total_tokens"],
+                "token_by_provider": dict(_spend["token_by_provider"]),
+                "token_by_label": dict(_spend["token_by_label"]),
                 "evolution_score": _EVOLUTION_SCORE,
                 "evolution_decisions": len(_EVOLUTION_LOG),
                 "evolution_patterns": len(_EVOLUTION_PATTERNS),
@@ -1502,6 +1564,21 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "rate_limit_config": _RATE_LIMIT_CONFIG,
                 "health_probes": dict(_HEALTH_PROBE_RESULTS) if _HEALTH_PROBE_RESULTS else None,
             })
+        elif self.path in ("/stats/reset", "/stats/reset/"):
+            with _spend_lock:
+                _snapshot = {
+                    "total_tokens": _spend["total_tokens"],
+                    "token_by_provider": dict(_spend["token_by_provider"]),
+                    "token_by_label": dict(_spend["token_by_label"]),
+                    "calls": _spend["calls"],
+                }
+                with _COST_PERF_LOG_LOCK:
+                    _COST_PERF_LOG.clear()
+                _spend["total_tokens"] = 0
+                _spend["token_by_provider"] = {}
+                _spend["token_by_label"] = {}
+                _spend["calls"] = 0
+            self._send_json(200, {"status": "reset", "previous": _snapshot})
         elif self.path in ("/cost-performance", "/cost-performance/"):
             with _COST_PERF_LOG_LOCK:
                 _summary = {}
@@ -1868,9 +1945,20 @@ class ThalamusHandler(BaseHTTPRequestHandler):
         expired = [t for t, exp in list(ADMIN_TOKEN.items()) if exp < now]
         for t in expired:
             ADMIN_TOKEN.pop(t, None)
+
+        # Check Authorization header first
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and auth[7:] in ADMIN_TOKEN:
             return True
+
+        # Fallback: check cookie
+        cookie = self.headers.get("Cookie", "")
+        for pair in cookie.split(";"):
+            pair = pair.strip()
+            if pair.startswith("admin_token="):
+                tok = pair[12:]
+                if tok in ADMIN_TOKEN:
+                    return True
         return False
 
     def _serve_admin_html(self):
@@ -1958,6 +2046,9 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "fallbacks": _spend["fallbacks"],
                 "errors": _spend["errors"],
                 "by_provider": dict(_spend["by_provider"]),
+                "total_tokens": _spend["total_tokens"],
+                "token_by_provider": dict(_spend["token_by_provider"]),
+                "token_by_label": dict(_spend["token_by_label"]),
             })
         elif self.path in ("/admin/api/balances", "/admin/api/balances/"):
             if not self._check_admin_auth():
@@ -2028,7 +2119,9 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             if secrets.compare_digest(pwd.encode(), stored.encode()):
                 token = secrets.token_urlsafe(32)
                 ADMIN_TOKEN[token] = time.time() + 86400  # 24h expiry
-                self._send_json(200, {"token": token})
+                self._send_json(200, {"token": token}, extra_headers={
+                    "Set-Cookie": f"admin_token={token}; Path=/; Max-Age=604800; SameSite=Lax"
+                })
             else:
                 self._send_error(401, "Invalid password")
             return
