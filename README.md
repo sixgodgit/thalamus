@@ -3,6 +3,9 @@
 > *"Thalamus: the brain's sensory relay station — every signal routed to the right cortical region."*
 
 **Version**: v4.1.0 | **Status**: Stable | **License**: MIT | **Dependencies**: Zero (Python stdlib only)
+[![CI](https://github.com/sixgodgit/thalamus/actions/workflows/test.yml/badge.svg)](https://github.com/sixgodgit/thalamus/actions/workflows/test.yml)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue)](https://python.org)
+[![Test Coverage](https://img.shields.io/badge/tests-52%20passed-brightgreen)](tests/)
 
 ---
 
@@ -180,6 +183,114 @@ default       ✅  5.26s
 ```
 
 Active health probes run every 60 seconds across all configured routes. Results are exposed in `/stats` for monitoring integration.
+
+---
+
+## Rate Limiting & Circuit Breaker
+
+### Rate Limiting
+
+Thalamus uses a **token-bucket** rate limiter per client IP:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_requests_per_window` | 300 | Max requests per 60s window |
+| `window_seconds` | 60 | Window duration |
+| `max_concurrent` | 30 | Max concurrent requests per IP |
+| `burst_tokens` | 50 | Burst capacity (auto-refills at 1/sec) |
+
+Rate limited requests return **HTTP 429** with a reason string (`burst`, `window`, or `concurrent`). Metrics are exposed via `/stats` and `/metrics`.
+
+### Circuit Breaker
+
+Per-route circuit breaker with automatic half-open probing:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `consecutive_fail_threshold` | 3 | Failures before circuit opens |
+| `half_open_interval` | 60s | Wait before probe request |
+| `recover_success_count` | 1 | Probe success closes circuit |
+
+States: **Closed** (normal) → **Open** (failing, requests skip to fallback) → **Half-Open** (probe allowed) → **Closed** (probe succeeded) or **Open** (probe failed).
+
+---
+
+## Failure Modes
+
+| Scenario | Behavior | Recovery |
+|----------|----------|----------|
+| **All backends down** | Returns HTTP 502 | Auto-restart when backends recover |
+| **Single route failing** | Circuit breaker opens → fallback chain activated → same-category model used | Half-open probe every 60s |
+| **API key missing** | Route skipped → next fallback tried | Logged as WARN in events.jsonl |
+| **Rate limit exceeded** | HTTP 429 with reason | Auto-resets after 60s window |
+| **Mid-stream failure** | SSE chunk with error message sent, stream terminated | Client reconnects |
+| **Invalid JSON body** | HTTP 400 | Client fixes request |
+| **Request too large** | HTTP 413 (>10MB) | Split request |
+| **Admin panel HTTPS required** | HTTP 426 Upgrade Required | Use HTTPS or access via localhost |
+| **Pre-check timeout** | Pre-check skipped, request proceeds normally | No user-facing impact |
+| **Input > 140K chars** | Route classification skipped, goes directly to DeepSeek default | Degraded routing accuracy |
+
+---
+
+## Security & Deployment
+
+### HTTPS (Production)
+
+Always deploy behind a TLS-terminating reverse proxy:
+
+```nginx
+# nginx reverse proxy
+server {
+    listen 443 ssl;
+    server_name thalamus.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:9880;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+        proxy_buffering off;  # Required for streaming SSE
+    }
+}
+
+server {
+    listen 80;
+    server_name thalamus.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+```caddy
+# Caddy reverse proxy (automatic HTTPS)
+thalamus.example.com {
+    reverse_proxy 127.0.0.1:9880
+    header {
+        X-Forwarded-Proto {scheme}
+    }
+}
+```
+
+### API Key Encryption
+
+Set `THALAMUS_MASTER_KEY` environment variable to enable Fernet encryption of `keys.json`:
+
+```bash
+export THALAMUS_MASTER_KEY="your-strong-random-key"
+```
+
+Without this env var, keys are stored in plaintext (backward compatible).
+
+### Admin Panel Security
+
+- Admin panel login: **5 failed attempts/min** → rate limited, **10 total** → 30min ban
+- HTTPS access required when exposed to network (non-localhost)
+- Login attempts logged to `events.jsonl` as `AUTH_LOGIN` events
+- Session tokens expire after 24 hours
 
 ---
 

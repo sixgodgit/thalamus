@@ -35,6 +35,7 @@ import subprocess
 import socks
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from cryptography.fernet import Fernet, InvalidToken
 
 # ══════════════════════════════════════════
 # 语义路由（v6 hybrid：TF-IDF 语义 + 正则兜底）
@@ -52,6 +53,7 @@ from semantic_router import classify_semantic
 LOG_PATH = Path(os.environ.get("THALAMUS_LOG", "/root/.hermes/logs/thalamus.log"))
 ROUTES_PATH = Path(os.environ.get("THALAMUS_ROUTES", "/root/thalamus/routes.json"))
 KEYS_PATH = Path("/root/thalamus/keys.json")
+KEYS_PATH_ENC = Path("/root/thalamus/keys.json.enc")
 ADMIN_HTML_PATH = Path("/root/thalamus/admin.html")
 ADMIN_PWD_PATH = Path("/root/thalamus/admin.pwd")
 ADMIN_TOKEN = {}  # {token: expiry}
@@ -72,7 +74,7 @@ def _load_routes():
         for r in cfg.get("routes", []):
             fbs = r.get("fallbacks", [])
             ROUTES.append((
-                re.compile(r["pattern"]),
+                re.compile(r["pattern"], re.IGNORECASE),
                 r["model"],
                 r["provider"],
                 r["endpoint"],
@@ -153,9 +155,89 @@ PRECHECK_FAST_KEY_ENV="deepseek"
 # keys.json 格式: {"ALIAS": {"key": "sk-...", "endpoint": "https://..."}}
 KEYS = {}  # alias -> {"key": str, "endpoint": str}
 
+# ══════════════════════════════════════════
+# 密钥加密 (Fernet) — 惰性初始化
+# ══════════════════════════════════════════
+
+import base64 as _base64
+
+_MASTER_KEY = os.environ.get("THALAMUS_MASTER_KEY", "")
+_FERNET_INSTANCE = None
+
+def _init_crypto():
+    """Lazy-init Fernet from THALAMUS_MASTER_KEY env var."""
+    global _FERNET_INSTANCE, _MASTER_KEY
+    if _FERNET_INSTANCE is not None:
+        return True
+    if not _MASTER_KEY:
+        return False
+    try:
+        _key_bytes = _base64.urlsafe_b64encode(hashlib.sha256(_MASTER_KEY.encode()).digest())
+        _FERNET_INSTANCE = Fernet(_key_bytes)
+        log("KEY CRYPTO: Fernet initialized from THALAMUS_MASTER_KEY")
+        return True
+    except Exception as e:
+        log(f"WARNING: failed to init Fernet: {e}")
+        _FERNET_INSTANCE = None
+        return False
+
+def _encrypt_keys_file(data: dict) -> bool:
+    """Encrypt keys dict to keys.json.enc. Returns True on success."""
+    inst = _init_crypto()
+    if not inst:
+        return False
+    try:
+        payload = json.dumps(data, ensure_ascii=False, default=str).encode()
+        encrypted = _FERNET_INSTANCE.encrypt(payload)
+        KEYS_PATH_ENC.write_bytes(encrypted)
+        return True
+    except Exception as e:
+        log(f"KEY CRYPTO: encrypt failed: {e}")
+        return False
+
+def _decrypt_keys_file() -> dict | None:
+    """Read and decrypt keys.json.enc. Returns dict or None."""
+    inst = _init_crypto()
+    if not inst or not KEYS_PATH_ENC.exists():
+        return None
+    try:
+        encrypted = KEYS_PATH_ENC.read_bytes()
+        payload = _FERNET_INSTANCE.decrypt(encrypted)
+        return json.loads(payload)
+    except InvalidToken:
+        log("KEY CRYPTO: invalid token or wrong master key (keys.json.enc ignored)")
+        return None
+    except Exception as e:
+        log(f"KEY CRYPTO: decrypt failed: {e}")
+        return None
+
+def _save_keys(data: dict):
+    """Save keys dict — encrypted when master key available, fallback to plaintext keys.json.
+    This is the single write path for all key CRUD operations."""
+    # Always write plaintext keys.json for backward compatibility
+    try:
+        with open(KEYS_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        log(f"KEY WRITE: failed to write {KEYS_PATH}: {e}")
+    # Also write encrypted if master key available
+    _encrypt_keys_file(data)
+
 def _load_keys():
     global KEYS
     try:
+        # 1. Try encrypted file first
+        decrypted = _decrypt_keys_file()
+        if decrypted is not None:
+            KEYS = {}
+            for alias, val in decrypted.items():
+                if isinstance(val, dict):
+                    KEYS[alias] = val
+                else:
+                    KEYS[alias] = {"key": val, "endpoint": "https://api.deepseek.com/v1/chat/completions"}
+            log(f"Loaded {len(KEYS)} API keys from {KEYS_PATH_ENC}")
+            return
+        # 2. Fallback to plaintext keys.json
         if KEYS_PATH.exists():
             with open(KEYS_PATH) as f:
                 raw = json.load(f)
@@ -243,10 +325,20 @@ _COST_PERF_LOG_MAX = 200
 _RATE_LIMIT = {}
 _RATE_LIMIT_LOCK = threading.Lock()
 _RATE_LIMIT_CONFIG = {
-    "max_requests_per_window": 60,   # 每个时间窗口最多请求数
+    "max_requests_per_window": 300,  # 每个时间窗口最多请求数（提高以支持多子Agent并行）
     "window_seconds": 60,             # 窗口大小（秒）
-    "max_concurrent": 10,             # 单 IP 最大并发
-    "burst_tokens": 10,               # 突发令牌数
+    "max_concurrent": 30,             # 单 IP 最大并发（提高以支持多子Agent并行）
+    "burst_tokens": 50,               # 突发令牌数（修复：旧值10太紧，子Agent并行瞬间爆）
+}
+# 管理面板登录限流（扩展 _RATE_LIMIT 结构）
+# 格式: {ip: {"fail_count": N, "window_start": ts, "banned_until": ts}}
+_LOGIN_RATE_LIMIT = {}
+_LOGIN_RATE_LIMIT_LOCK = threading.Lock()
+_LOGIN_RATE_LIMIT_CONFIG = {
+    "max_fail_per_window": 5,      # 每窗口最多失败次数
+    "window_seconds": 60,           # 窗口大小（秒）
+    "ban_threshold": 10,            # 累计失败次数触发封禁
+    "ban_duration": 1800,           # 封禁时长（秒）= 30分钟
 }
 # 主动健康探测
 _HEALTH_PROBE_RESULTS = {}  # {label: {"ok": bool, "latency": float, "last_probe": ts}}
@@ -281,6 +373,190 @@ def log(msg: str):
     except Exception:
         pass
     print(line, flush=True, file=sys.stderr)
+
+
+# ══════════════════════════════════════════
+# 结构化日志 (JSON Lines)
+# ══════════════════════════════════════════
+
+EVENTS_LOG_PATH = Path("/root/thalamus/events.jsonl")
+_EVENTS_LOG_LOCK = threading.Lock()
+
+def _structured_log(level: str, event: str, data: dict | None = None):
+    """写入结构化 JSON 日志到 events.jsonl.
+    
+    level: INFO | WARN | ERROR
+    event: ROUTE | CALL | ERROR | FALLBACK | CIRCUIT | PRECHECK | AUTH_LOGIN
+    data: 可选字段 dict，支持 latency_ms, label, provider, error, tokens 等
+    """
+    entry = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
+        "level": level,
+        "event": event,
+    }
+    if data:
+        entry.update(data)
+    try:
+        EVENTS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _EVENTS_LOG_LOCK:
+            with open(EVENTS_LOG_PATH, "a") as f:
+                f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
+
+
+# ══════════════════════════════════════════
+# Prometheus 指标（纯 stdlib 实现）
+# ══════════════════════════════════════════
+
+_PROMETHEUS_BUCKETS = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, float("inf")]
+
+_METRICS_LOCK = threading.Lock()
+_METRICS = {
+    "requests_total": {},       # (method, endpoint, status, label, provider) -> int
+    "duration_bucket_counts": {}, # (label, provider, bucket_idx) -> int
+    "duration_sum": {},         # (label, provider) -> float (seconds)
+    "duration_count": {},       # (label, provider) -> int
+    "tokens_prompt": {},        # (label, provider) -> int
+    "tokens_completion": {},    # (label, provider) -> int
+    "fallbacks_total": {},      # (label, target) -> int
+    "rate_limit_blocks": 0,
+}
+
+def _metrics_record_request(method: str, endpoint: str, status: int, label: str, provider: str):
+    with _METRICS_LOCK:
+        key = (method, endpoint, status, label, provider)
+        _METRICS["requests_total"][key] = _METRICS["requests_total"].get(key, 0) + 1
+
+def _metrics_record_duration(label: str, provider: str, seconds: float):
+    with _METRICS_LOCK:
+        key = (label, provider)
+        _METRICS["duration_sum"][key] = _METRICS["duration_sum"].get(key, 0.0) + seconds
+        _METRICS["duration_count"][key] = _METRICS["duration_count"].get(key, 0) + 1
+        # 记录到 bucket
+        for bi, bound in enumerate(_PROMETHEUS_BUCKETS):
+            if seconds <= bound:
+                bk = (label, provider, bi)
+                _METRICS["duration_bucket_counts"][bk] = _METRICS["duration_bucket_counts"].get(bk, 0) + 1
+                break
+
+def _metrics_record_tokens(label: str, provider: str, prompt_tok: int, completion_tok: int):
+    with _METRICS_LOCK:
+        lpk = (label, provider)
+        _METRICS["tokens_prompt"][lpk] = _METRICS["tokens_prompt"].get(lpk, 0) + prompt_tok
+        _METRICS["tokens_completion"][lpk] = _METRICS["tokens_completion"].get(lpk, 0) + completion_tok
+
+def _metrics_record_fallback(label: str, target: str):
+    with _METRICS_LOCK:
+        key = (label, target)
+        _METRICS["fallbacks_total"][key] = _METRICS["fallbacks_total"].get(key, 0) + 1
+
+def _metrics_record_rate_limit_block():
+    with _METRICS_LOCK:
+        _METRICS["rate_limit_blocks"] += 1
+
+
+def _generate_prometheus_metrics() -> str:
+    """手动拼 Prometheus exposition format (text/plain; version=0.0.4)"""
+    lines = []
+    lines.append("# HELP thalamus_requests_total Total requests handled")
+    lines.append("# TYPE thalamus_requests_total counter")
+    with _METRICS_LOCK:
+        for (method, endpoint, status, label, provider), count in _METRICS["requests_total"].items():
+            lines.append(f'thalamus_requests_total{{method="{method}",endpoint="{endpoint}",status="{status}",label="{label}",provider="{provider}"}} {count}')
+
+    lines.append("# HELP thalamus_request_duration_seconds Request latency distribution")
+    lines.append("# TYPE thalamus_request_duration_seconds histogram")
+    with _METRICS_LOCK:
+        # buckets
+        bucketed = {}
+        for (label, provider, bi), count in _METRICS["duration_bucket_counts"].items():
+            bound = _PROMETHEUS_BUCKETS[bi]
+            bound_str = "+Inf" if bound == float("inf") else str(bound)
+            lines.append(f'thalamus_request_duration_seconds_bucket{{label="{label}",provider="{provider}",le="{bound_str}"}} {count}')
+        # sum + count
+        for (label, provider), total_s in _METRICS["duration_sum"].items():
+            count = _METRICS["duration_count"].get((label, provider), 0)
+            lines.append(f'thalamus_request_duration_seconds_sum{{label="{label}",provider="{provider}"}} {total_s}')
+            lines.append(f'thalamus_request_duration_seconds_count{{label="{label}",provider="{provider}"}} {count}')
+
+    lines.append("# HELP thalamus_tokens_total Total tokens (prompt + completion)")
+    lines.append("# TYPE thalamus_tokens_total counter")
+    with _METRICS_LOCK:
+        for (label, provider), count in _METRICS["tokens_prompt"].items():
+            lines.append(f'thalamus_tokens_total{{label="{label}",provider="{provider}",type="prompt"}} {count}')
+        for (label, provider), count in _METRICS["tokens_completion"].items():
+            lines.append(f'thalamus_tokens_total{{label="{label}",provider="{provider}",type="completion"}} {count}')
+
+    lines.append("# HELP thalamus_circuit_breaker_info Circuit breaker state per label")
+    lines.append("# TYPE thalamus_circuit_breaker_info gauge")
+    with _CIRCUIT_BREAKER_LOCK:
+        seen = set()
+        for label, state in _CIRCUIT_BREAKER.items():
+            is_open = state.get("is_open", False)
+            lines.append(f'thalamus_circuit_breaker_info{{label="{label}",state="open"}} {1 if is_open else 0}')
+            lines.append(f'thalamus_circuit_breaker_info{{label="{label}",state="closed"}} {0 if is_open else 1}')
+            seen.add(label)
+        # 确保每个 label 都有两行
+        for label in seen:
+            pass  # already above
+
+    lines.append("# HELP thalamus_fallbacks_total Total fallback attempts")
+    lines.append("# TYPE thalamus_fallbacks_total counter")
+    with _METRICS_LOCK:
+        for (label, target), count in _METRICS["fallbacks_total"].items():
+            lines.append(f'thalamus_fallbacks_total{{label="{label}",target="{target}"}} {count}')
+
+    lines.append("# HELP thalamus_rate_limit_blocks_total Total rate limit blocks")
+    lines.append("# TYPE thalamus_rate_limit_blocks_total counter")
+    with _METRICS_LOCK:
+        lines.append(f'thalamus_rate_limit_blocks_total {_METRICS["rate_limit_blocks"]}')
+
+    return "\n".join(lines) + "\n"
+
+
+# ══════════════════════════════════════════
+# 延迟百分位数跟踪（最近 1000 条）
+# ══════════════════════════════════════════
+
+_LATENCIES = []          # list of (label: str, latency_seconds: float)
+_LATENCIES_LOCK = threading.Lock()
+_LATENCIES_MAX = 1000
+
+def _record_latency(label: str, seconds: float):
+    with _LATENCIES_LOCK:
+        _LATENCIES.append((label, seconds))
+        if len(_LATENCIES) > _LATENCIES_MAX:
+            _LATENCIES.pop(0)
+
+def _compute_percentiles(values: list[float]) -> dict:
+    if not values:
+        return {"p50": 0, "p90": 0, "p95": 0, "p99": 0}
+    sv = sorted(values)
+    n = len(sv)
+    def p(percent):
+        idx = max(0, min(n - 1, int(n * percent / 100)))
+        return round(sv[idx], 3)
+    return {
+        "p50": p(50),
+        "p90": p(90),
+        "p95": p(95),
+        "p99": p(99),
+    }
+
+def _get_latency_percentiles() -> dict:
+    """返回全局和按 label 分组的百分位数"""
+    with _LATENCIES_LOCK:
+        all_vals = [v for _, v in _LATENCIES]
+        by_label = {}
+        for lbl, val in _LATENCIES:
+            by_label.setdefault(lbl, []).append(val)
+    result = {
+        "overall": _compute_percentiles(all_vals),
+        "by_label": {lbl: _compute_percentiles(vals) for lbl, vals in by_label.items()},
+        "sample_count": len(all_vals),
+    }
+    return result
 
 
 # ══════════════════════════════════════════
@@ -711,8 +987,19 @@ def _rate_limit_check(client_ip: str) -> tuple[bool, str]:
                 "count": 1,
                 "window_start": now,
                 "concurrent": 1,
+                "tokens": _RATE_LIMIT_CONFIG["burst_tokens"] - 1,
+                "last_refill": now,
             }
             return (True, "")
+        
+        # ── 令牌补充：按时间差补充令牌（每 1 秒恢复 1 个）──
+        last_refill = entry.get("last_refill", entry["window_start"])
+        elapsed = now - last_refill
+        if elapsed >= 1.0:
+            refill = int(elapsed)  # 每秒补 1 个
+            max_tokens = _RATE_LIMIT_CONFIG["burst_tokens"]
+            entry["tokens"] = min(max_tokens, entry.get("tokens", max_tokens) + refill)
+            entry["last_refill"] = now
         
         # 检查突发令牌
         if entry.get("tokens", _RATE_LIMIT_CONFIG["burst_tokens"]) <= 0:
@@ -729,7 +1016,7 @@ def _rate_limit_check(client_ip: str) -> tuple[bool, str]:
             return (False, "rate_limit: concurrent exceeded")
         
         entry["count"] += 1
-        # 消耗一个令牌，每 1 秒恢复一个
+        # 消耗一个令牌
         entry["tokens"] = entry.get("tokens", _RATE_LIMIT_CONFIG["burst_tokens"]) - 1
         return (True, "")
 
@@ -799,24 +1086,43 @@ def process(body: dict) -> tuple[str, bool, dict]:
     messages = body.get("messages", [])
     is_stream = body.get("stream", False)
 
-    # 0. Input length guard: 如果总输入 > 140K 字符，跳过 token173 路由直接走 DeepSeek
+    # 0. Input length guard: 如果总输入 > 140K 字符，跳过 TF-IDF 语义路由但保留正则匹配
     total_input_chars = sum(
         len(m.get("content", "")) if isinstance(m.get("content"), str) else 0
         for m in messages
     )
     long_input = total_input_chars > 140_000
     if long_input:
-        log(f"INPUT TOO LONG ({total_input_chars} chars): skipping route classification, going straight to DeepSeek")
-        endpoint, model, key_env, provider, label, proxy = (
-            DEFAULT_ENDPOINT, DEFAULT_MODEL, DEFAULT_KEY_ENV, DEFAULT_PROVIDER, "DeepSeek (long input)", False
-        )
-        route = (endpoint, model, key_env, provider, label, proxy, [])  # 7-tuple with empty fallbacks
+        log(f"INPUT TOO LONG ({total_input_chars} chars): skipping semantic classification, regex-only routing")
+        # 只从最后一条 user 消息提取文本做正则匹配（TF-IDF 在超长文本上失效）
+        last_text = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                content = m.get("content", "")
+                if isinstance(content, str):
+                    last_text = content
+                elif isinstance(content, list):
+                    text_parts = [p.get("text", "") for p in content if p.get("type") == "text"]
+                    last_text = " ".join(text_parts)
+                break
+        route = None
+        if last_text:
+            for pattern, model, provider_name, endpoint, key_env, label, proxy, fallbacks in ROUTES:
+                if pattern.search(last_text):
+                    log(f"ROUTE (long input): regex → {label} ({model})")
+                    route = (endpoint, model, key_env, provider_name, label, proxy, fallbacks)
+                    break
+        if not route:
+            # 正则没匹配到 → 默认路由
+            endpoint, model, key_env, provider, label, proxy = (
+                DEFAULT_ENDPOINT, DEFAULT_MODEL, DEFAULT_KEY_ENV, DEFAULT_PROVIDER, "DeepSeek (long input)", False
+            )
+            route = (endpoint, model, key_env, provider, label, proxy, [])
 
-    # 1. 先分类（正则匹配，零成本）
+    # 1. 先分类（非长输入时走完整 classify，含语义兜底）
     if not long_input:
         route = classify(messages)
-    else:
-        route = route  # 保留 input length guard 设置的路由
+    # 注意：long_input 的 route 已在上面设好，此处不覆盖
 
     # 2. 只在代码类路由才跑 precheck
     should_precheck = False
@@ -1370,7 +1676,9 @@ def _circuit_record(label: str, success: bool):
     state = _circuit_get_state(label)
     now = time.time()
     if success:
-        if state["is_open"]:
+        # 检测是否为半开探测成功：last_probe_ts 在 2 秒内设定过
+        half_open_success = (now - state.get("last_probe_ts", 0)) < 2.0
+        if state["is_open"] or half_open_success:
             # 半开状态下成功 → 关闭熔断
             state["is_open"] = False
             state["fail_count"] = 0
@@ -1563,7 +1871,16 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "berserker_total_chars": _spend.get("berserker_total_chars", 0),
                 "rate_limit_config": _RATE_LIMIT_CONFIG,
                 "health_probes": dict(_HEALTH_PROBE_RESULTS) if _HEALTH_PROBE_RESULTS else None,
+                "latency_percentiles": _get_latency_percentiles(),
             })
+        elif self.path in ("/metrics", "/metrics/"):
+            prometheus_text = _generate_prometheus_metrics()
+            body = prometheus_text.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         elif self.path in ("/stats/reset", "/stats/reset/"):
             with _spend_lock:
                 _snapshot = {
@@ -1582,6 +1899,8 @@ class ThalamusHandler(BaseHTTPRequestHandler):
         elif self.path in ("/cost-performance", "/cost-performance/"):
             with _COST_PERF_LOG_LOCK:
                 _summary = {}
+                _grand_total_cost = 0.0
+                _grand_total_tokens = 0
                 for entry in _COST_PERF_LOG:
                     key = entry["label"]
                     if key not in _summary:
@@ -1590,13 +1909,27 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                     _summary[key]["total_cost"] += entry["est_cost"]
                     _summary[key]["total_latency"] += entry["latency"]
                     _summary[key]["total_tokens"] += entry["input_tok"] + entry["output_tok"]
+                    _grand_total_cost += entry["est_cost"]
+                    _grand_total_tokens += entry["input_tok"] + entry["output_tok"]
+                _est_weekly = round(_grand_total_cost * 7 * (1 if len(_COST_PERF_LOG) == 0 else 200 / max(len(_COST_PERF_LOG), 1)), 6)
+                _est_monthly = round(_grand_total_cost * 30 * (1 if len(_COST_PERF_LOG) == 0 else 200 / max(len(_COST_PERF_LOG), 1)), 6)
                 for k, v in _summary.items():
                     c = v["calls"]
                     v["avg_latency"] = round(v["total_latency"] / c, 2)
                     v["avg_cost"] = round(v["total_cost"] / c, 6)
+                    v["cost_per_1k_tokens"] = round(v["total_cost"] / (v["total_tokens"] / 1000), 6) if v["total_tokens"] > 0 else 0
                     del v["total_cost"]
                     del v["total_latency"]
-                data = {"summary": _summary, "recent": _COST_PERF_LOG[-20:]}
+                data = {
+                    "summary": _summary,
+                    "recent": _COST_PERF_LOG[-20:],
+                    "estimates": {
+                        "total_cost_current_window": round(_grand_total_cost, 6),
+                        "total_tokens_current_window": _grand_total_tokens,
+                        "estimated_weekly_cost": _est_weekly,
+                        "estimated_monthly_cost": _est_monthly,
+                    },
+                }
             self._send_json(200, data)
         elif self.path.startswith("/semantic-debug"):
             from semantic_router import get_debug_info
@@ -1961,6 +2294,72 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                     return True
         return False
 
+    def _check_https_admin(self) -> bool:
+        """Enforce HTTPS for admin endpoints. Returns True if HTTPS or loopback."""
+        # Allow localhost without HTTPS
+        client_ip = self.client_address[0]
+        if client_ip in ("127.0.0.1", "::1", "localhost"):
+            return True
+        # Check X-Forwarded-Proto header
+        proto = self.headers.get("X-Forwarded-Proto", "").lower()
+        if proto == "https":
+            return True
+        # Not HTTPS → send 426 Upgrade Required
+        self.send_response(426)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Upgrade", "TLS/1.2, HTTP/1.1")
+        self.send_header("Connection", "Upgrade")
+        body = json.dumps({"error": "HTTPS required", "code": 426}).encode()
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        _structured_log("WARN", "AUTH_LOGIN", {"event": "https_blocked", "ip": client_ip, "path": self.path})
+        return False
+
+    def _check_login_rate_limit(self, client_ip: str) -> tuple[bool, str | None]:
+        """Check login rate limit for client_ip.
+        Returns: (allowed: bool, error_message: str | None)
+        """
+        now = time.time()
+        with _LOGIN_RATE_LIMIT_LOCK:
+            entry = _LOGIN_RATE_LIMIT.get(client_ip)
+            # Check ban
+            if entry and entry.get("banned_until", 0) > now:
+                remaining = int(entry["banned_until"] - now)
+                return (False, f"Account temporarily locked. Try again in {remaining}s.")
+            if not entry or (now - entry.get("window_start", 0)) > _LOGIN_RATE_LIMIT_CONFIG["window_seconds"]:
+                # New window
+                _LOGIN_RATE_LIMIT[client_ip] = {
+                    "fail_count": 0,
+                    "window_start": now,
+                    "banned_until": 0,
+                }
+                return (True, None)
+            return (True, None)
+
+    def _record_login_failure(self, client_ip: str):
+        """Record a login failure and check if ban should be applied."""
+        now = time.time()
+        with _LOGIN_RATE_LIMIT_LOCK:
+            entry = _LOGIN_RATE_LIMIT.get(client_ip)
+            if not entry or (now - entry.get("window_start", 0)) > _LOGIN_RATE_LIMIT_CONFIG["window_seconds"]:
+                entry = {
+                    "fail_count": 1,
+                    "window_start": now,
+                    "banned_until": 0,
+                }
+                _LOGIN_RATE_LIMIT[client_ip] = entry
+            else:
+                entry["fail_count"] += 1
+            # Check window limit
+            if entry["fail_count"] >= _LOGIN_RATE_LIMIT_CONFIG["ban_threshold"]:
+                entry["banned_until"] = now + _LOGIN_RATE_LIMIT_CONFIG["ban_duration"]
+                log(f"LOGIN RATE LIMIT: {client_ip} banned for {_LOGIN_RATE_LIMIT_CONFIG['ban_duration']}s after {entry['fail_count']} failures")
+            elif entry["fail_count"] >= _LOGIN_RATE_LIMIT_CONFIG["max_fail_per_window"]:
+                # Reset window to prevent more attempts in this window
+                entry["window_start"] = now
+                log(f"LOGIN RATE LIMIT: {client_ip} rate limited after {entry['fail_count']} failures in window")
+
     def _serve_admin_html(self):
         try:
             html = ADMIN_HTML_PATH.read_text(encoding="utf-8")
@@ -1986,6 +2385,9 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self._send_error(500, f"Failed to load terminal page: {e}")
 
     def _handle_admin_get(self):
+        # HTTPS enforcement for all admin endpoints
+        if not self._check_https_admin():
+            return
         if self.path in ("/admin/", "/admin"):
             self._serve_admin_html()
         elif self.path in ("/admin/api/config", "/admin/api/config/"):
@@ -2109,20 +2511,38 @@ class ThalamusHandler(BaseHTTPRequestHandler):
     def _handle_admin_post(self, body: dict):
         path = self.path.rstrip("/")
 
+        # HTTPS enforcement for all admin endpoints
+        if not self._check_https_admin():
+            return
+
         if path == "/admin/api/login":
+            client_ip = self.client_address[0]
+            # Rate limit check
+            allowed, err_msg = self._check_login_rate_limit(client_ip)
+            if not allowed:
+                log(f"LOGIN RATE LIMIT: {client_ip} denied: {err_msg}")
+                self._send_error(429, err_msg or "Too many login attempts")
+                _structured_log("WARN", "AUTH_LOGIN", {"event": "login_rate_limited", "ip": client_ip})
+                return
             pwd = body.get("password", "")
             stored = _get_admin_password()
             if not stored:
+                _structured_log("ERROR", "AUTH_LOGIN", {"event": "login_failed", "ip": client_ip, "reason": "no_password_configured"})
                 self._send_error(500, "No admin password configured")
                 return
             # Simple timing-safe comparison
             if secrets.compare_digest(pwd.encode(), stored.encode()):
                 token = secrets.token_urlsafe(32)
                 ADMIN_TOKEN[token] = time.time() + 86400  # 24h expiry
+                _structured_log("INFO", "AUTH_LOGIN", {"event": "login_success", "ip": client_ip})
+                log(f"Admin login success: {client_ip}")
                 self._send_json(200, {"token": token}, extra_headers={
                     "Set-Cookie": f"admin_token={token}; Path=/; Max-Age=604800; SameSite=Lax"
                 })
             else:
+                self._record_login_failure(client_ip)
+                _structured_log("WARN", "AUTH_LOGIN", {"event": "login_failed", "ip": client_ip, "reason": "invalid_password"})
+                log(f"Admin login failed: {client_ip}")
                 self._send_error(401, "Invalid password")
             return
 
@@ -2176,8 +2596,7 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             self._send_error(400, "Missing required fields: name, key")
             return
         KEYS[name] = {"key": key, "endpoint": endpoint or "https://api.deepseek.com/v1/chat/completions"}
-        with open(KEYS_PATH, "w") as f:
-            json.dump(KEYS, f, indent=2)
+        _save_keys(KEYS)
         log(f"Admin: saved API key '{name}'")
         self._send_json(200, {"status": "ok", "keys": list(KEYS.keys())})
 
@@ -2201,8 +2620,7 @@ class ThalamusHandler(BaseHTTPRequestHandler):
             pass
 
         del KEYS[name]
-        with open(KEYS_PATH, "w") as f:
-            json.dump(KEYS, f, indent=2)
+        _save_keys(KEYS)
         log(f"Admin: deleted API key '{name}'")
         self._send_json(200, {"status": "ok", "affected": affected})
 
@@ -2296,8 +2714,7 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                     self._send_error(400, "Missing key_name or key_value")
                     return
                 KEYS[name] = {"key": value, "endpoint": endpoint or "https://api.deepseek.com/v1/chat/completions"}
-                with open(KEYS_PATH, "w") as f:
-                    json.dump(KEYS, f, indent=2)
+                _save_keys(KEYS)
                 log(f"Admin: saved API key '{name}'")
                 self._send_json(200, {"status": "ok", "keys": list(KEYS.keys())})
                 return
@@ -2305,8 +2722,7 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 name = body.get("key_name", "")
                 if name in KEYS:
                     KEYS.pop(name)
-                    with open(KEYS_PATH, "w") as f:
-                        json.dump(KEYS, f, indent=2)
+                    _save_keys(KEYS)
                     log(f"Admin: deleted API key '{name}'")
                 self._send_json(200, {"status": "ok"})
                 return
@@ -2391,8 +2807,26 @@ def main():
     server.daemon_threads = True
 
     def shutdown(signum, frame):
+        # 🔴 关键：绝不能在信号处理器（主线程）里直接调用 server.shutdown()。
+        # shutdown() 会阻塞等待 serve_forever() 循环退出，但该循环正跑在主线程，
+        # 而主线程此刻卡在信号处理器里 → 死锁 → 进程挂死、socket 不释放（幽灵进程）。
+        # 解法：① 在独立线程里调用 shutdown()（打破死锁）；
+        #       ② 失败保险：无论如何 3 秒后硬退出，保证 socket 被释放、systemd 能重启。
         log(f"SHUTDOWN: received signal {signum}")
-        server.shutdown()
+
+        def _do_shutdown():
+            try:
+                server.shutdown()
+            except Exception as e:
+                log(f"SHUTDOWN: server.shutdown() error: {e}")
+
+        def _failsafe():
+            time.sleep(3)
+            log("SHUTDOWN: failsafe hard-exit (shutdown stalled)")
+            os._exit(0)
+
+        threading.Thread(target=_do_shutdown, daemon=True).start()
+        threading.Thread(target=_failsafe, daemon=True).start()
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
@@ -2400,7 +2834,7 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         log("SHUTDOWN: received SIGINT")
-        server.shutdown()
+    finally:
         log("SHUTDOWN: complete")
 
 
