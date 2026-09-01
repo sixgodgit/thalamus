@@ -26,22 +26,7 @@ logger = logging.getLogger(__name__)
 # The embedding is computed lazily on first request.
 
 _DEFAULT_PROFILES = {
-    "mimo": [
-        "帮我写一个 Python 排序算法",
-        "修复这个 bug",
-        "部署 nginx 配置文件",
-        "写一个 React 组件",
-        "这个代码报错了，帮我看看",
-        "用 golang 实现一个 http server",
-        "调试这个 Dockerfile",
-        "写一个 SQL 查询",
-        "重构这段代码",
-        "这个函数怎么优化性能",
-        "实现一个 REST API 端点",
-        "帮我写单元测试",
-        "git 合并冲突怎么解决",
-    ],
-    "claude": [
+    "gpt": [
         "分析一下当前的市场趋势",
         "这篇文章的核心观点是什么",
         "比较这两种方案的优劣",
@@ -65,6 +50,19 @@ _DEFAULT_PROFILES = {
         "你叫什么名字",
         "晚安",
         "周末愉快",
+        "帮我写一个 Python 排序算法",
+        "修复这个 bug",
+        "部署 nginx 配置文件",
+        "写一个 React 组件",
+        "这个代码报错了，帮我看看",
+        "用 golang 实现一个 http server",
+        "调试这个 Dockerfile",
+        "写一个 SQL 查询",
+        "重构这段代码",
+        "这个函数怎么优化性能",
+        "实现一个 REST API 端点",
+        "帮我写单元测试",
+        "git 合并冲突怎么解决",
     ],
     "ops_restaurant": [
         "帮我翻译这个菜单成荷兰语",
@@ -79,6 +77,16 @@ _DEFAULT_PROFILES = {
         "设计一个特价套餐",
         "这个月营业额怎么样",
         "客人投诉菜凉了怎么回复",
+    ],
+
+    "qwen": [
+        "看看这张图片",
+        "帮我识别这个截图里的文字",
+        "这张照片里有什么",
+        "OCR 识别这个图片",
+        "分析这个表情包",
+        "这个海报上的信息是什么",
+        "帮我看看这个扫描件",
     ],
     "translate": [
         "把这个菜单翻译成荷兰语",

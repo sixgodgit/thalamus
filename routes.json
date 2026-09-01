@@ -1,69 +1,113 @@
 {
   "routes": [
     {
-      "label": "longcat",
-      "model": "LongCat-2.0",
-      "provider": "meituan",
-      "key_env": "longcat",
-      "endpoint": "https://api.longcat.chat/openai/v1/chat/completions",
-      "pattern": "代码|编程|重构|部署|deploy|编译|make|nginx|docker|systemctl|ssh|git|commit|PR|shell|bash|脚本|修复|报错|error|exception|traceback|日志分析|调试|debug|apt|pip|npm|pytest|def |class |python|java|golang|rust|node|react|vue|k8s|kubernetes|jenkins|ci/cd|ansible|terraform|yaml|Dockerfile|docker-compose",
-      "usage": "code",
+      "label": "general",
+      "model": "deepseek-chat",
+      "provider": "deepseek",
+      "key_env": "deepseek",
+      "endpoint": "https://api.deepseek.com/v1/chat/completions",
+      "pattern": "(?!)",
+      "proxy": false,
+      "fallbacks": []
+    },
+    {
+      "label": "code",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "key_env": "deepseek",
+      "endpoint": "https://api.deepseek.com/v1/chat/completions",
+      "pattern": "(?!)",
       "proxy": false,
       "fallbacks": [
-        {"model": "deepseek-v4-flash", "provider": "deepseek", "key_env": "deepseek", "endpoint": "https://api.deepseek.com/v1/chat/completions"}
+        {
+          "model": "deepseek-chat",
+          "provider": "deepseek",
+          "key_env": "deepseek",
+          "endpoint": "https://api.deepseek.com/v1/chat/completions"
+        }
       ]
     },
     {
-      "label": "Claude Sonnet 5",
-      "model": "claude-sonnet-5",
-      "provider": "中转海外",
-      "key_env": "中转海外",
-      "endpoint": "https://token173.com/v1/chat/completions",
-      "pattern": "分析|对比|比较|推理|为什么|原因|根因|深度|论证|评估|策略|方案|设计架构|优缺点|权衡|决策|审查|审计|review|评审",
-      "usage": "reason",
+      "label": "opencode",
+      "model": "gpt-5.6-luna",
+      "provider": "opencode",
+      "key_env": "opencode",
+      "endpoint": "https://opencode.ai/zen/go/v1/chat/completions",
+      "pattern": "(?!)",
       "proxy": true,
       "fallbacks": [
-        {"model": "gpt-4o-mini", "provider": "中转海外", "key_env": "中转海外", "endpoint": "https://token173.com/v1/chat/completions"},
-        {"model": "deepseek-v4-flash", "provider": "deepseek", "key_env": "deepseek", "endpoint": "https://api.deepseek.com/v1/chat/completions"}
+        {
+          "model": "deepseek-chat",
+          "provider": "deepseek",
+          "key_env": "deepseek",
+          "endpoint": "https://api.deepseek.com/v1/chat/completions"
+        }
       ]
     },
     {
-      "label": "Gpt 4o Mini",
-      "model": "gpt-4o-mini",
-      "provider": "中转海外",
-      "key_env": "中转海外",
-      "endpoint": "https://token173.com/v1/chat/completions",
-      "pattern": "图片|截图|照片|图像|看图|OCR|识别图|vision|视觉|多媒体",
-      "usage": "vision",
+      "label": "reason",
+      "model": "deepseek-chat",
+      "provider": "deepseek",
+      "key_env": "deepseek",
+      "endpoint": "https://api.deepseek.com/v1/chat/completions",
+      "pattern": "(?!)",
+      "proxy": false,
+      "fallbacks": [
+        {
+          "model": "deepseek-v4-flash",
+          "provider": "deepseek",
+          "key_env": "deepseek",
+          "endpoint": "https://api.deepseek.com/v1/chat/completions"
+        }
+      ]
+    },
+    {
+      "label": "vision",
+      "model": "mimo-v2.5",
+      "provider": "opencode",
+      "key_env": "opencode",
+      "endpoint": "https://opencode.ai/zen/go/v1/chat/completions",
+      "pattern": "图片|截图|照片|视觉|多模态|image|vision|OCR|ocr",
       "proxy": true,
       "fallbacks": [
-        {"model": "deepseek-v4-flash", "provider": "deepseek", "key_env": "deepseek", "endpoint": "https://api.deepseek.com/v1/chat/completions"}
+        {
+          "model": "gpt-5.6-luna",
+          "provider": "opencode",
+          "key_env": "opencode",
+          "endpoint": "https://opencode.ai/zen/go/v1/chat/completions",
+          "proxy": true
+        }
       ]
     }
   ],
   "default": {
-    "model": "deepseek-v4-flash",
+    "model": "deepseek-chat",
     "provider": "deepseek",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
     "key_env": "deepseek"
-  },
-  "longcat": {
-    "model": "LongCat-2.0",
-    "provider": "longcat",
-    "endpoint": "https://api.longcat.chat/openai/v1/chat/completions",
-    "key_env": "longcat"
   },
   "fallback": {
-    "model": "LongCat-2.0",
-    "provider": "longcat",
-    "endpoint": "https://api.longcat.chat/openai/v1/chat/completions",
-    "key_env": "longcat"
-  },
-  "precheck": {
-    "enabled": true,
-    "model": "deepseek-v4-flash",
+    "model": "deepseek-chat",
     "provider": "deepseek",
     "endpoint": "https://api.deepseek.com/v1/chat/completions",
     "key_env": "deepseek"
+  },
+  "precheck": {
+    "enabled": false
+  },
+  "ai_routing": {
+    "enabled": true,
+    "mode": "always",
+    "model": "deepseek-chat",
+    "provider": "deepseek",
+    "key_env": "deepseek",
+    "endpoint": "https://api.deepseek.com/v1/chat/completions",
+    "timeout": 10,
+    "categories": {
+      "general": "日常对话、简单问答、闲聊、寒暄、天气、新闻、情绪倾诉、翻译、一般信息查询",
+      "code": "编程、写代码、调试、修bug、部署、运维、shell、git、docker、nginx、systemd、报错排查、代码重构、单元测试",
+      "reason": "深度分析、逻辑推理、对比评估、复杂决策、写作润色、策略方案、架构设计、利弊权衡、预测",
+      "opencode": "顶级前沿模型 gpt-5.6-luna：复杂高难度编程、顶尖代码质量、前沿推理、高要求任务"
+    }
   }
 }

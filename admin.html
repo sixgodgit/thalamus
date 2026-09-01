@@ -1,1495 +1,417 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Thalamus · 模型调度中枢</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Thalamus · 模型控制台</title>
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Thalamus 控制台" />
+<meta name="theme-color" content="#000000" />
 <style>
-/* ═══════════════════════════════════
-   1. Design Tokens（Soft UI Evolution）
-   ═══════════════════════════════════ */
-:root {
-  --bg: #07080a;
-  --bg-surface: #0d0f13;
-  --bg-card: rgba(16, 18, 24, 0.75);
-  --bg-glass: rgba(255, 255, 255, 0.03);
-  --bg-glass-hover: rgba(255, 255, 255, 0.06);
-  --brd: rgba(255, 255, 255, 0.06);
-  --brd-hover: rgba(255, 255, 255, 0.12);
-  --text: #e8e9ed;
-  --text-2: #8b8fa3;
-  --text-3: #5c5f73;
-  --accent: #7c8aff;
-  --accent-glow: rgba(124, 138, 255, 0.15);
-  --green: #34d399;
-  --green-bg: rgba(52, 211, 153, 0.12);
-  --yellow: #fbbf24;
-  --yellow-bg: rgba(251, 191, 36, 0.12);
-  --red: #f87171;
-  --red-bg: rgba(248, 113, 113, 0.12);
-  --purple: #a78bfa;
-  --purple-bg: rgba(167, 139, 250, 0.12);
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --shadow: 0 2px 12px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.04);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --mono: 'JetBrains Mono', 'SF Mono', SFMono-Regular, Consolas, monospace;
-  --sidebar-w: 68px;
+:root{
+  --bg:#000000;
+  --surface:#1c1c1e;
+  --surface-2:#2c2c2e;
+  --separator:rgba(84,84,88,0.65);
+  --label:#ffffff;
+  --label-2:rgba(235,235,245,0.6);
+  --label-3:rgba(235,235,245,0.3);
+  --accent:#0a84ff;
+  --green:#30d158;
+  --red:#ff453a;
+  --orange:#ff9f0a;
+  --radius-lg:20px;
+  --radius-md:12px;
+  --radius-sm:8px;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
 }
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 14px; -webkit-font-smoothing: antialiased; }
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  line-height: 1.5;
-  min-height: 100vh;
-  overflow-x: hidden;
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%;height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--label);min-height:100vh;
+  padding:calc(16px + var(--safe-top)) 16px calc(24px + var(--safe-bottom));
+  line-height:1.4;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none;
 }
+.wrap{max-width:460px;margin:0 auto}
+header{padding:8px 4px 20px}
+header h1{font-size:2rem;font-weight:700;letter-spacing:0.01em}
+header p{color:var(--label-2);font-size:0.875rem;margin-top:6px}
 
-/* ═══════════════════════════════════
-   2. Background Ambient
-   ═══════════════════════════════════ */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 600px 400px at 15% 20%, rgba(124,138,255,0.05) 0%, transparent 70%),
-    radial-gradient(ellipse 500px 500px at 85% 80%, rgba(167,139,250,0.04) 0%, transparent 70%),
-    radial-gradient(ellipse 300px 300px at 50% 50%, rgba(52,211,153,0.02) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
+.card{background:var(--surface);border-radius:var(--radius-lg);padding:18px 16px;margin-bottom:14px}
+.card h2{font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--label-3);margin-bottom:14px;font-weight:600}
+.card h2 .count{color:var(--accent);margin-left:6px}
 
-input, select, textarea, button { font: inherit; color: inherit; }
+label{display:block;font-size:0.8125rem;color:var(--label-2);margin-bottom:7px;font-weight:500}
+.field{margin-bottom:14px}
+.field:last-child{margin-bottom:0}
 
-/* ═══════════════════════════════════
-   3. Login
-   ═══════════════════════════════════ */
-.login-wrap {
-  display: flex; align-items: center; justify-content: center;
-  min-height: 100vh; padding: 20px;
-  background: radial-gradient(ellipse 700px 500px at 30% 40%, rgba(124,138,255,.06) 0%, var(--bg) 70%);
+input[type="text"],input[type="password"],input[type="number"],textarea,select{
+  width:100%;background:#111113;border:1px solid transparent;border-radius:var(--radius-md);
+  color:var(--label);font-size:1rem;padding:12px 14px;outline:none;font-family:inherit;
+  transition:border-color .18s ease,box-shadow .18s ease,background .18s ease;
+  -webkit-appearance:none;appearance:none;
 }
-.login-card {
-  background: var(--bg-card); backdrop-filter: blur(24px);
-  border: 1px solid var(--brd); border-radius: var(--radius-lg);
-  padding: 44px 36px 36px;
-  width: 380px; max-width: 90vw;
-  box-shadow: var(--shadow-lg);
-  animation: loginIn 0.5s ease-out;
-}
-@keyframes loginIn {
-  from { opacity: 0; transform: translateY(16px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-.login-card .logo {
-  width: 40px; height: 40px;
-  background: linear-gradient(135deg, var(--accent), var(--purple));
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px; margin-bottom: 16px;
-}
-.login-card h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
-.login-card .subtitle { color: var(--text-2); font-size: 13px; margin-bottom: 28px; margin-top: 4px; }
-.login-card input {
-  display: block; width: 100%;
-  background: rgba(0,0,0,0.3); border: 1px solid var(--brd);
-  border-radius: var(--radius-sm); padding: 11px 14px;
-  font-size: 14px; outline: none; transition: all .15s;
-}
-.login-card input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
-.login-card button {
-  display: block; width: 100%; margin-top: 14px;
-  background: linear-gradient(135deg, var(--accent), #6b7aff);
-  border: none; border-radius: var(--radius-sm); padding: 11px;
-  font-size: 14px; font-weight: 500; color: #fff;
-  cursor: pointer; transition: opacity .15s, transform .1s;
-}
-.login-card button:hover { opacity: .9; }
-.login-card button:active { transform: scale(0.98); }
-.login-card button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
-.login-error { color: var(--red); font-size: 12px; margin-top: 10px; text-align: center; }
+input:focus,textarea:focus,select:focus{background:#111113;border-color:var(--accent);box-shadow:0 0 0 4px rgba(10,132,255,0.18)}
+input::placeholder,textarea::placeholder{color:var(--label-3)}
+textarea{min-height:64px;resize:vertical}
 
-/* ═══════════════════════════════════
-   4. App Layout — Sidebar
-   ═══════════════════════════════════ */
-.app { display: none; }
-.app.show { display: flex; min-height: 100vh; }
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;border:none;
+  border-radius:var(--radius-md);padding:13px 14px;font-size:1rem;font-weight:600;cursor:pointer;
+  width:100%;min-height:48px;transition:transform .12s ease,opacity .12s ease,background .15s ease;font-family:inherit;
+}
+.btn:active{transform:scale(.98);opacity:.85}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:active{background:#0a6ce0}
+.btn-ghost{background:transparent;border:1px solid var(--separator);color:var(--label-2)}
+.btn-ghost:active{background:rgba(255,255,255,.06)}
+.btn-danger{background:rgba(255,69,58,.15);color:var(--red)}
+.btn-danger:active{background:rgba(255,69,58,.25)}
+.btn-sm{padding:8px 12px;min-height:36px;font-size:.875rem;width:auto}
 
-.sidebar {
-  position: fixed; left: 0; top: 0; bottom: 0;
-  width: var(--sidebar-w);
-  background: var(--bg-surface);
-  border-right: 1px solid var(--brd);
-  display: flex; flex-direction: column;
-  align-items: center; padding: 16px 0;
-  z-index: 50;
-  animation: sidebarIn 0.4s ease-out;
-}
-@keyframes sidebarIn { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-.sidebar .s-logo {
-  width: 36px; height: 36px;
-  background: linear-gradient(135deg, var(--accent), var(--purple));
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 15px; margin-bottom: 20px; cursor: pointer;
-  transition: transform .15s, box-shadow .15s;
-}
-.sidebar .s-logo:hover { transform: scale(1.05); box-shadow: 0 0 20px var(--accent-glow); }
-.s-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.s-nav button {
-  width: 44px; height: 44px; border: none; border-radius: 10px;
-  background: transparent; color: var(--text-2); font-size: 18px;
-  cursor: pointer; transition: all .15s; display: flex;
-  align-items: center; justify-content: center; position: relative;
-}
-.s-nav button:hover { background: var(--bg-glass); color: var(--text); }
-.s-nav button.active {
-  background: var(--accent-glow); color: var(--accent);
-  box-shadow: 0 0 12px rgba(124,138,255,0.1);
-}
-.s-nav button::after {
-  content: attr(data-tip);
-  position: absolute; left: 56px;
-  background: var(--bg-surface); border: 1px solid var(--brd);
-  padding: 4px 10px; border-radius: 6px; font-size: 12px;
-  font-weight: 500; white-space: nowrap;
-  opacity: 0; pointer-events: none; transition: all .15s;
-  color: var(--text);
-}
-.s-nav button:hover::after { opacity: 1; }
-.s-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
-.s-bottom button {
-  width: 44px; height: 44px; border: none; border-radius: 10px;
-  background: transparent; color: var(--text-2); font-size: 16px;
-  cursor: pointer; transition: all .15s;
-  display: flex; align-items: center; justify-content: center;
-}
-.s-bottom button:hover { background: var(--bg-glass); color: var(--text); }
-.s-bottom .s-logout:hover { color: var(--red); }
+.status-pill{display:inline-flex;align-items:center;gap:6px;font-size:.8125rem;color:var(--label-2);padding:4px 12px;border-radius:999px;background:var(--surface-2);margin-right:6px;margin-bottom:6px}
+.status-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+.status-pill .dot.off{background:var(--label-3)}
 
-/* ═══════════════════════════════════
-   5. Main Content
-   ═══════════════════════════════════ */
-.main {
-  margin-left: var(--sidebar-w);
-  flex: 1; padding: 28px 32px 40px;
-  max-width: 1360px;
-  animation: mainIn 0.4s ease-out;
-}
-@keyframes mainIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.route{background:var(--surface-2);border-radius:var(--radius-md);padding:14px;margin-bottom:10px}
+.route-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.route-name{font-weight:600;font-size:1rem}
+.route-model{font-size:.8125rem;color:var(--label-2);font-variant-numeric:tabular-nums}
+.route-meta{font-size:.75rem;color:var(--label-3);margin-top:4px;word-break:break-all}
+.route-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.tag{font-size:.6875rem;padding:2px 8px;border-radius:999px;background:rgba(10,132,255,.12);color:var(--accent)}
+.tag.key-ok{background:rgba(48,209,88,.12);color:var(--green)}
+.tag.key-miss{background:rgba(255,69,58,.12);color:var(--red)}
 
-.main-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 28px;
-}
-.main-header .left h1 {
-  font-size: 22px; font-weight: 600; letter-spacing: -0.4px;
-  display: flex; align-items: center; gap: 10px;
-}
-.main-header .left h1 span { color: var(--accent); }
-.main-header .left .sub { font-size: 13px; color: var(--text-2); margin-top: 2px; }
-.main-header .actions {
-  display: flex; gap: 6px;
-  animation: actionsIn 0.5s ease-out 0.2s both;
-}
-@keyframes actionsIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-.main-header .actions button {
-  background: var(--bg-glass); border: 1px solid var(--brd);
-  border-radius: var(--radius-sm); padding: 7px 14px;
-  font-size: 12px; cursor: pointer; transition: all .15s;
-  color: var(--text-2); display: flex; align-items: center; gap: 5px;
-}
-.main-header .actions button:hover {
-  background: var(--bg-glass-hover); color: var(--text);
-  border-color: var(--brd-hover);
-}
-.main-header .actions .btn-restart { color: var(--yellow); }
-.main-header .actions .btn-restart:hover { background: var(--yellow-bg); border-color: rgba(251,191,36,.3); }
-.main-header .actions .btn-logout { color: var(--red); }
-.main-header .actions .btn-logout:hover { background: var(--red-bg); border-color: rgba(248,113,113,.3); }
+.row-actions{display:flex;gap:8px;margin-top:10px}
+.row-actions .btn{flex:1}
 
-/* ═══════════════════════════════════
-   6. Tab Panes (keep for JS)
-   ═══════════════════════════════════ */
-.tab-pane { display: none; }
-.tab-pane.active { display: block; animation: paneIn 0.3s ease-out; }
-@keyframes paneIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.empty{color:var(--label-3);font-size:.875rem;text-align:center;padding:20px 0}
+.hint{font-size:.75rem;color:var(--label-3);margin-top:8px;line-height:1.5}
 
-/* ═══════════════════════════════════
-   7. Stats Cards (Bento Grid)
-   ═══════════════════════════════════ */
-.cards {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 28px;
-  justify-items: center;
+/* 探测结果模型选择列表 */
+.probe-list{max-height:260px;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:6px}
+.probe-item{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:#111113;border:1px solid var(--separator);border-radius:var(--radius-sm);
+  padding:10px 12px;cursor:pointer;transition:all .15s ease;text-align:left;width:100%;
 }
-.card {
-  background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--brd);
-  border-radius: var(--radius);
-  padding: 18px 20px;
-  transition: all .2s;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-.card::before {
-  content: '';
-  position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: 0; transition: opacity .2s;
-}
-.card:hover { transform: translateY(-2px); border-color: var(--brd-hover); box-shadow: var(--shadow); }
-.card:hover::before { opacity: 0.6; }
-.card .icon {
-  font-size: 24px;
-  margin-bottom: 8px;
-  opacity: 0.8;
-  transition: all .2s;
-}
-.card:hover .icon { opacity: 1; transform: scale(1.1); }
-.card .label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: .8px;
-  color: var(--text-2);
-  margin-bottom: 4px;
-}
-.card .value {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -.5px;
-}
-.card .sub {
-  font-size: 10px;
-  color: var(--text-3);
-  margin-top: 2px;
-}
-.card .value.green { color: var(--green); }
-.card .value.yellow { color: var(--yellow); }
-.card .value.red { color: var(--red); }
-.card .value.blue { color: var(--accent); }
-.card .value.purple { color: var(--purple); }
+.probe-item:active{background:rgba(10,132,255,.12);border-color:var(--accent)}
+.probe-item .pi-id{font-size:.875rem;font-weight:500;color:var(--label);font-variant-numeric:tabular-nums;word-break:break-all}
+.probe-item .pi-owner{font-size:.6875rem;color:var(--label-3);white-space:nowrap;flex-shrink:0}
+.probe-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:.8125rem;color:var(--label-2)}
+.probe-bar .pi-count{color:var(--accent);font-weight:600}
+.toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:calc(24px + var(--safe-bottom));
+  background:var(--surface-2);color:var(--label);padding:12px 20px;border-radius:12px;font-size:.875rem;
+  opacity:0;transition:all .25s ease;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4);pointer-events:none;max-width:90%;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.error{color:var(--red)}
+.toast.ok{color:var(--green)}
 
-@media(max-width: 800px) {
-  .cards { grid-template-columns: repeat(2, 1fr); }
-}
+.login-screen{max-width:400px;margin:8vh auto 0}
+.login-screen h1{font-size:1.75rem;margin-bottom:8px}
+.login-screen .sub{color:var(--label-2);font-size:.875rem;margin-bottom:28px}
 
-/* ═══════════════════════════════════
-   8. Routes Table (Card)
-   ═══════════════════════════════════ */
-.route-wrap {
-  background: var(--bg-card); backdrop-filter: blur(12px);
-  border: 1px solid var(--brd); border-radius: var(--radius-lg);
-  overflow: hidden;
-  transition: box-shadow .2s;
-}
-.route-wrap:hover { box-shadow: var(--shadow); }
-.route-wrap .top-actions {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--brd);
-}
-.route-wrap .top-actions .left { display: flex; align-items: center; gap: 12px; }
-.route-wrap .top-actions .left h3 { font-size: 14px; font-weight: 600; }
-.route-wrap .top-actions .left .count {
-  font-size: 11px; color: var(--text-2);
-  background: var(--bg); padding: 2px 10px; border-radius: 20px;
-}
-.route-wrap .top-actions button {
-  background: linear-gradient(135deg, var(--accent), #6b7aff);
-  border: none; border-radius: var(--radius-sm);
-  padding: 7px 16px; font-size: 12px; color: #fff;
-  cursor: pointer; transition: all .15s;
-}
-.route-wrap .top-actions button:hover { opacity: .88; transform: translateY(-1px); }
-.route-wrap .top-actions button:active { transform: translateY(0); }
-
-table { width: 100%; border-collapse: collapse; }
-thead th {
-  text-align: left; padding: 12px 16px;
-  font-size: 10px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .8px;
-  color: var(--text-3);
-  border-bottom: 1px solid var(--brd);
-  white-space: nowrap;
-}
-tbody tr { border-bottom: 1px solid var(--brd); transition: background .1s; }
-tbody tr:last-child { border-bottom: none; }
-tbody tr:hover { background: var(--bg-glass); }
-tbody td { padding: 12px 16px; font-size: 13px; vertical-align: middle; }
-
-.tag {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 10px; border-radius: 20px;
-  font-size: 11px; font-weight: 500;
-}
-.tag.code { background: var(--green-bg); color: var(--green); }
-.tag.reason { background: var(--accent-glow); color: var(--accent); }
-.tag.vision { background: var(--purple-bg); color: var(--purple); }
-.tag.daily { background: rgba(110,118,129,.15); color: var(--text-2); }
-
-.mono { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
-td[contenteditable] {
-  outline: none; cursor: text;
-  border-radius: 4px; padding: 2px 6px;
-  transition: all .1s;
-}
-td[contenteditable]:focus {
-  background: var(--accent-glow);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-.e-btn {
-  background: var(--bg-glass); border: 1px solid var(--brd);
-  border-radius: 6px; padding: 5px 12px; font-size: 11px;
-  cursor: pointer; color: var(--text-2);
-  transition: all .12s; white-space: nowrap;
-}
-.e-btn:hover { background: var(--bg-glass-hover); color: var(--text); border-color: var(--brd-hover); }
-.e-btn.danger { color: var(--red); border-color: rgba(248,113,113,.25); }
-.e-btn.danger:hover { background: var(--red-bg); border-color: var(--red); }
-
-.proxy-toggle {
-  cursor: pointer; display: inline-flex;
-  align-items: center; justify-content: center;
-  width: 32px; height: 28px;
-  border-radius: 6px; transition: background .1s;
-}
-.proxy-toggle:hover { background: var(--bg-glass); }
-
-/* ═══════════════════════════════════
-   9. Key Section
-   ═══════════════════════════════════ */
-.key-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.key-section {
-  background: var(--bg-card); backdrop-filter: blur(12px);
-  border: 1px solid var(--brd); border-radius: var(--radius-lg);
-  padding: 20px 24px;
-}
-.key-section .head {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 16px;
-}
-.key-section .head h3 { font-size: 14px; font-weight: 600; }
-.key-section .head button {
-  background: linear-gradient(135deg, var(--accent), #6b7aff);
-  border: none; border-radius: var(--radius-sm);
-  padding: 6px 14px; font-size: 12px; color: #fff;
-  cursor: pointer; transition: all .12s;
-}
-.key-section .head button:hover { opacity: .88; }
-.key-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 0; border-bottom: 1px solid var(--brd); gap: 10px;
-}
-.key-row:last-child { border-bottom: none; }
-.key-row .k-main { flex: 1; min-width: 0; }
-.key-row .k-name { font-family: var(--mono); font-size: 12px; font-weight: 500; }
-.key-row .k-ep { font-size: 11px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.key-row .k-val { font-size: 11px; color: var(--text-2); margin-top: 1px; font-family: var(--mono); }
-.key-row .k-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.key-row .k-actions button {
-  background: var(--bg-glass); border: 1px solid var(--brd);
-  border-radius: 6px; padding: 4px 10px; font-size: 11px;
-  cursor: pointer; color: var(--text-2); transition: all .1s;
-}
-.key-row .k-actions button:hover { background: var(--bg-glass-hover); color: var(--text); }
-.key-row .k-actions .del { color: var(--red); }
-.key-row .k-actions .del:hover { background: var(--red-bg); }
-.k-badge { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 10px; font-weight: 500; }
-.k-badge.env { background: rgba(110,118,129,.15); color: var(--text-2); }
-
-@media(max-width: 900px) { .key-grid { grid-template-columns: 1fr; } }
-
-/* ═══════════════════════════════════
-   10. Config — Chain Visualization
-   ═══════════════════════════════════ */
-.chain-wrap {
-  background: var(--bg-card); backdrop-filter: blur(12px);
-  border: 1px solid var(--brd); border-radius: var(--radius-lg);
-  padding: 24px; margin-bottom: 20px;
-}
-.chain-title { font-size: 14px; font-weight: 600; margin-bottom: 20px; }
-.chain-flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
-.chain-node {
-  width: 100%; max-width: 420px;
-  border-radius: var(--radius); padding: 16px 20px;
-  transition: all .15s;
-}
-.chain-start {
-  background: var(--accent-glow);
-  border: 1px dashed rgba(124,138,255,0.25);
-  text-align: center; font-size: 13px; font-weight: 500;
-  color: var(--accent); cursor: default;
-}
-.chain-card {
-  background: rgba(0,0,0,0.2);
-  border: 1px solid var(--brd); cursor: pointer;
-}
-.chain-card:hover { border-color: var(--accent); background: var(--accent-glow); }
-.chain-card[data-open="true"] { border-color: var(--accent); }
-.chain-info { background: rgba(0,0,0,0.2); border: 1px solid var(--brd); cursor: default; opacity: .7; }
-.cn-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-.cn-icon { font-size: 16px; flex-shrink: 0; }
-.cn-label { font-size: 13px; font-weight: 600; }
-.cn-badge {
-  font-size: 10px; padding: 2px 10px; border-radius: 20px;
-  background: var(--green-bg); color: var(--green);
-  margin-left: auto; flex-shrink: 0;
-}
-.cn-model {
-  font-size: 12px; font-family: var(--mono);
-  color: var(--accent); margin-left: 26px;
-}
-.cn-meta { font-size: 11px; color: var(--text-2); margin-left: 26px; margin-top: 2px; }
-.chain-arr { text-align: center; font-size: 10px; color: var(--text-3); padding: 6px 0; position: relative; width: 100%; }
-.arr-label { font-size: 10px; color: var(--text-3); margin-left: 8px; }
-
-/* Inline config panels */
-.cfg-panel {
-  background: var(--bg-card); backdrop-filter: blur(12px);
-  border: 1px solid var(--brd); border-radius: var(--radius-lg);
-  overflow: hidden; margin-bottom: 12px;
-}
-.cp-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; cursor: pointer; font-size: 13px; font-weight: 600;
-  transition: background .1s; user-select: none;
-}
-.cp-head:hover { background: var(--bg-glass); }
-.cp-toggle { font-size: 10px; color: var(--text-2); }
-.cp-body { padding: 18px 20px; border-top: 1px solid var(--brd); }
-.cp-hint {
-  font-size: 12px; color: var(--text-2); margin-bottom: 16px;
-  padding: 10px 14px; background: rgba(0,0,0,0.3);
-  border-radius: var(--radius-sm); line-height: 1.5;
-}
-.cp-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.cp-switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
-.cp-switch input { opacity: 0; width: 0; height: 0; }
-.cp-slider {
-  position: absolute; cursor: pointer; inset: 0;
-  background: rgba(110,118,129,.3); border-radius: 20px;
-  transition: background .2s;
-}
-.cp-slider:before {
-  content: ''; position: absolute; height: 14px; width: 14px;
-  left: 3px; bottom: 3px; background: #fff;
-  border-radius: 50%; transition: transform .2s;
-}
-.cp-switch input:checked + .cp-slider { background: var(--green); }
-.cp-switch input:checked + .cp-slider:before { transform: translateX(16px); }
-
-/* ═══════════════════════════════════
-   11. Logs
-   ═══════════════════════════════════ */
-.logs-wrap {
-  background: var(--bg-card); backdrop-filter: blur(12px);
-  border: 1px solid var(--brd); border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-.logs-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; border-bottom: 1px solid var(--brd);
-}
-.logs-header .left { display: flex; align-items: center; gap: 12px; }
-.logs-header .left h3 { font-size: 14px; font-weight: 600; }
-.logs-header .left .filter-group { display: flex; gap: 4px; }
-.logs-header .left .filter-group button {
-  background: transparent; border: 1px solid var(--brd);
-  border-radius: 6px; padding: 4px 12px; font-size: 11px;
-  cursor: pointer; color: var(--text-2); transition: all .12s;
-}
-.logs-header .left .filter-group button:hover { border-color: var(--brd-hover); color: var(--text); }
-.logs-header .left .filter-group button.active {
-  background: var(--accent-glow); border-color: var(--accent); color: var(--accent);
-}
-.logs-body {
-  background: #06080b; padding: 0;
-  max-height: 420px; overflow-y: auto;
-  font-family: var(--mono); font-size: 11px; line-height: 1.7;
-}
-.logs-body .line {
-  padding: 3px 16px; color: #6b7089;
-  transition: background .1s; white-space: pre-wrap; word-break: break-all;
-}
-.logs-body .line:hover { background: rgba(255,255,255,.02); }
-.logs-body .line.err { color: var(--red); }
-.logs-body .line.fbk { color: var(--yellow); }
-.logs-body .line.route { color: var(--accent); }
-.logs-body .line.ok { color: var(--green); }
-.logs-footer {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px; border-top: 1px solid var(--brd);
-  font-size: 11px; color: var(--text-2);
-}
-.logs-footer .auto-scroll { display: flex; align-items: center; gap: 6px; }
-.logs-footer .auto-scroll label { font-size: 11px; cursor: pointer; }
-
-/* ═══════════════════════════════════
-   12. Modal
-   ═══════════════════════════════════ */
-.modal-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,.7);
-  backdrop-filter: blur(4px);
-  display: none; align-items: center; justify-content: center;
-  z-index: 100;
-  animation: overlayIn .15s ease-out;
-}
-.modal-overlay.show { display: flex; }
-@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
-.modal {
-  background: var(--bg-card); backdrop-filter: blur(24px);
-  border: 1px solid var(--brd);
-  border-radius: var(--radius-lg);
-  width: 540px; max-width: 92vw; max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: var(--shadow-lg);
-  animation: modalIn .2s ease-out;
-}
-@keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-.modal .m-h { padding: 20px 24px; border-bottom: 1px solid var(--brd); font-size: 15px; font-weight: 600; }
-.modal .m-b { padding: 20px 24px; }
-.modal .m-footer {
-  padding: 14px 24px; border-top: 1px solid var(--brd);
-  display: flex; justify-content: flex-end; gap: 8px;
-}
-.modal .m-footer button {
-  background: var(--bg-glass); border: 1px solid var(--brd);
-  border-radius: var(--radius-sm); padding: 8px 18px;
-  font-size: 12px; cursor: pointer; transition: all .12s;
-}
-.modal .m-footer button:hover { background: var(--bg-glass-hover); }
-.modal .m-footer .btn-primary {
-  background: linear-gradient(135deg, var(--accent), #6b7aff);
-  border-color: transparent; color: #fff;
-}
-.modal .m-footer .btn-primary:hover { opacity: .88; }
-.modal .m-footer .btn-danger { color: var(--red); }
-.modal .m-footer .btn-danger:hover { background: var(--red-bg); }
-
-.field { margin-bottom: 16px; }
-.field:last-child { margin-bottom: 0; }
-.field label {
-  display: block; font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .5px;
-  color: var(--text-2); margin-bottom: 5px;
-}
-.field input, .field select, .field textarea {
-  display: block; width: 100%;
-  background: rgba(0,0,0,0.3); border: 1px solid var(--brd);
-  border-radius: var(--radius-sm); padding: 9px 13px;
-  font-size: 13px; outline: none; transition: all .15s;
-}
-.field input:focus, .field select:focus, .field textarea:focus {
-  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow);
-}
-.field .hint { font-size: 11px; color: var(--text-2); margin-top: 4px; }
-.field-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.field-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-
-/* ═══════════════════════════════════
-   13. Probe / Misc
-   ═══════════════════════════════════ */
-.probe-group { display: flex; gap: 8px; align-items: flex-end; }
-.probe-group select { flex: 1; }
-.probe-group button {
-  background: var(--accent); border: none;
-  border-radius: var(--radius-sm); padding: 6px 14px;
-  font-size: 11px; color: #fff; cursor: pointer;
-  white-space: nowrap; transition: opacity .15s;
-  height: 36px; align-self: flex-end;
-}
-.probe-group button:hover { opacity: .85; }
-.probe-group button:disabled { opacity: .4; cursor: not-allowed; }
-.probe-btn {
-  background: var(--bg-glass); border: 1px solid var(--brd);
-  border-radius: var(--radius-sm); padding: 6px 14px;
-  font-size: 11px; cursor: pointer; color: var(--text-2);
-  transition: all .12s; white-space: nowrap;
-}
-.probe-btn:hover { background: var(--bg-glass-hover); color: var(--text); }
-.probe-btn:disabled { opacity: .4; cursor: not-allowed; }
-
-.probe-models {
-  font-size: 11px; color: var(--text-2); margin-top: 4px;
-  max-height: 160px; overflow-y: auto;
-  background: rgba(0,0,0,0.3); border-radius: var(--radius-sm);
-  padding: 8px;
-}
-.probe-models .m {
-  display: inline-block; padding: 3px 10px; margin: 2px;
-  border-radius: 6px; background: var(--accent-glow);
-  color: var(--text); cursor: default; font-size: 11px;
-  font-family: var(--mono);
-}
-.probe-models .m-card {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; margin: 4px 0;
-  border: 1px solid var(--brd); border-radius: var(--radius-sm);
-  background: rgba(0,0,0,0.2); cursor: pointer;
-  transition: all .12s;
-}
-.probe-models .m-card:hover { border-color: var(--accent); background: var(--accent-glow); }
-.probe-models .m-card.sel { border-color: var(--accent); background: var(--accent-glow); }
-.probe-models .m-card .m-id { font-family: var(--mono); font-size: 12px; }
-.probe-models .m-card .m-tags { display: flex; gap: 2px; flex-wrap: wrap; }
-
-.empty-state { padding: 40px 20px; text-align: center; color: var(--text-2); font-size: 13px; }
-.empty-state-small { padding: 20px; text-align: center; color: var(--text-2); font-size: 12px; }
-.match-result { margin-top: 4px; font-size: 11px; padding: 6px 10px; border-radius: 6px; }
-.match-result.yes { background: var(--green-bg); color: var(--green); }
-.match-result.no { background: var(--red-bg); color: var(--red); }
-.cascade-warn {
-  background: var(--red-bg); border: 1px solid rgba(248,113,113,.25);
-  border-radius: var(--radius-sm); padding: 10px 14px;
-  margin-bottom: 16px; font-size: 12px; color: var(--red); line-height: 1.6;
-}
-
-/* ═══════════════════════════════════
-   14. Toast
-   ═══════════════════════════════════ */
-.toast {
-  position: fixed; bottom: 28px; right: 28px;
-  background: var(--bg-card); backdrop-filter: blur(24px);
-  border: 1px solid var(--brd); border-radius: 10px;
-  padding: 13px 22px; font-size: 13px; z-index: 200;
-  box-shadow: var(--shadow-lg);
-  opacity: 0; transform: translateY(12px);
-  transition: all .25s cubic-bezier(.22,.61,.36,1);
-  pointer-events: none;
-}
-.toast.show { opacity: 1; transform: translateY(0); }
-.toast.ok { border-color: rgba(52,211,153,.4); }
-.toast.err { border-color: rgba(248,113,113,.4); }
-
-/* ═══════════════════════════════════
-   15. Responsive
-   ═══════════════════════════════════ */
-@media(max-width: 700px) {
-  .main { padding: 20px 16px 40px; }
-  .sidebar { width: 56px; }
-  .sidebar .s-nav button, .sidebar .s-bottom button { width: 36px; height: 36px; font-size: 15px; }
-  .main { margin-left: 56px; }
-}
-
-/* ═══════════════════════════════════
-   16. Scrollbar
-   ═══════════════════════════════════ */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+.hidden{display:none}
 </style>
 </head>
 <body>
+<div class="wrap">
 
-<!-- ═══ LOGIN ═══ -->
-<div class="login-wrap" id="loginWrap">
-  <div class="login-card">
-    <div class="logo">✦</div>
+  <!-- 登录 -->
+  <div id="loginScreen" class="login-screen hidden">
     <h1>Thalamus</h1>
-    <p class="subtitle">v4.0.0 · 模型调度中枢</p>
-    <input type="password" id="pwdInput" placeholder="输入密码" autocomplete="off" onkeydown="if(event.key==='Enter')doLogin()">
-    <button id="loginBtn" onclick="doLogin()">登录</button>
-    <div class="login-error" id="loginErr"></div>
-  </div>
-</div>
-
-<!-- ═══ APP ═══ -->
-<div class="app" id="app">
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <div class="s-logo">✦</div>
-    <div class="s-nav">
-      <button class="active" data-tab="routes" data-tip="路由规则">🔀</button>
-      <button data-tab="keys" data-tip="API 密钥">🔑</button>
-      <button data-tab="config" data-tip="系统配置">⚙️</button>
-      <button data-tab="logs" data-tip="运行日志">📋</button>
+    <p class="sub">精简版模型路由控制台 · 管理 API Key 与路由</p>
+    <div class="field">
+      <label for="pwd">管理密码</label>
+      <input type="password" id="pwd" placeholder="admin.pwd" autocomplete="current-password" />
     </div>
-    <div class="s-bottom">
-      <button onclick="reloadRoutes()" data-tip="重载配置" style="font-size:14px">🔄</button>
-      <button onclick="restartService()" data-tip="重启服务" style="color:var(--yellow);font-size:14px">🔁</button>
-      <button class="s-logout" onclick="doLogout()" data-tip="退出">🚪</button>
-    </div>
+    <button class="btn btn-primary" id="loginBtn">登录</button>
+    <p class="hint" style="text-align:center">登录后 token 保留 24 小时</p>
   </div>
 
-  <!-- Main -->
-  <div class="main">
-    <div class="main-header">
-      <div class="left">
-        <h1>✦ <span>Thalamus</span></h1>
-        <div class="sub">模型调度中枢 · v4.0.0</div>
-      </div>
-      <div class="actions">
-        <button onclick="fetchAll()">🔄 刷新</button>
-        <button onclick="resetTokenStats()" style="margin-left:6px;background:var(--red);color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer">🔄 重置计数</button>
-      </div>
+  <!-- 主界面 -->
+  <div id="mainScreen" class="hidden">
+    <header>
+      <h1>模型控制台</h1>
+      <p id="subtitle">加载中…</p>
+    </header>
+
+    <!-- 状态 -->
+    <div class="card">
+      <h2>路由状态</h2>
+      <div id="statusPills"></div>
     </div>
 
-    <!-- Stats Cards -->
-    <div class="cards" id="cardsBox"></div>
-
-    <!-- Tab Panes -->
-    <div class="tab-pane active" id="pane-routes">
-      <div class="route-wrap">
-        <div class="top-actions">
-          <div class="left"><h3>路由规则</h3><span class="count" id="routeCount">0</span></div>
-          <button onclick="openRoute()">+ 新建</button>
-        </div>
-        <div style="overflow-x:auto"><table>
-          <thead><tr>
-            <th style="width:70px">用途</th>
-            <th style="min-width:120px">名称</th>
-            <th style="min-width:140px">模型</th>
-            <th>Provider</th>
-            <th>密钥</th>
-            <th>端点</th>
-            <th style="width:50px">代理</th>
-            <th style="width:80px">操作</th>
-          </tr></thead>
-          <tbody id="routesBody"></tbody>
-        </table></div>
-        <div class="empty-state" id="routesEmpty" style="display:none">暂无路由规则</div>
-      </div>
-    </div>
-
-    <div class="tab-pane" id="pane-keys">
-      <div class="key-grid">
-        <div class="key-section">
-          <div class="head"><h3>🔑 自定义密钥</h3><button onclick="openKeyAddModal()">+ 添加</button></div>
-          <div id="keysBody"></div>
-          <div class="empty-state-small" id="keysEmpty" style="display:none">暂无自定义密钥</div>
-        </div>
-        <div class="key-section">
-          <div class="head"><h3>🌐 环境变量密钥</h3></div>
-          <div id="envKeysBody"></div>
-          <div class="empty-state-small" id="envKeysEmpty" style="display:none">无环境变量密钥</div>
-          <div class="hint" style="margin-top:14px;font-size:11px;color:var(--text-2)">环境变量密钥仅供读取</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-pane" id="pane-config">
-      <div class="chain-wrap">
-        <div class="chain-title">🎯 调度链路 <span style="font-weight:400;font-size:11px;color:var(--text-2);margin-left:8px">点击卡片展开编辑</span></div>
-        <div class="chain-flow">
-          <div class="chain-node chain-start">💬 用户请求</div>
-          <div class="chain-arr">▾</div>
-          <div class="chain-node chain-card" tabindex="0" onclick="toggleCfgPanel('pc')" data-open="false">
-            <div class="cn-row">
-              <span class="cn-icon" id="pc_icon">🟢</span>
-              <span class="cn-label">智能预检</span>
-              <span class="cn-badge" id="pc_badge">已启用</span>
-            </div>
-            <div class="cn-model" id="pc_model_show">deepseek-v4-flash</div>
-            <div class="cn-meta">先判断消息类型，再决定走哪条路由</div>
-          </div>
-          <div class="chain-arr">▾<span class="arr-label">命中路由 → 直达该模型</span></div>
-          <div class="chain-node chain-info">
-            <div class="cn-row">
-              <span class="cn-icon">🔀</span>
-              <span class="cn-label">路由匹配</span>
-              <span class="cn-badge" id="route_badge" style="background:var(--accent-glow);color:var(--accent)">3 条</span>
-            </div>
-            <div class="cn-model" id="route_names_show">glm · claude · KLING</div>
-            <div class="cn-meta">切换到「路由规则」Tab 管理</div>
-          </div>
-          <div class="chain-arr">▾<span class="arr-label">未匹配 → 走默认</span></div>
-          <div class="chain-node chain-card" tabindex="0" onclick="toggleCfgPanel('def')" data-open="false">
-            <div class="cn-row"><span class="cn-icon">🔵</span><span class="cn-label">默认模型</span></div>
-            <div class="cn-model" id="def_model_show">-</div>
-            <div class="cn-meta">无路由匹配时的兜底模型</div>
-          </div>
-          <div class="chain-arr">▾<span class="arr-label">失败时</span></div>
-          <div class="chain-node chain-card" tabindex="0" onclick="toggleCfgPanel('fb')" data-open="false">
-            <div class="cn-row"><span class="cn-icon">🟡</span><span class="cn-label">降级兜底</span></div>
-            <div class="cn-model" id="fb_model_show">-</div>
-            <div class="cn-meta">默认模型不可用时的最后防线</div>
-          </div>
-        </div>
-      </div>
-
-      <div id="cfgInlineArea">
-        <div class="cfg-panel" id="cfg-pc" style="display:none">
-          <div class="cp-head" onclick="toggleCfgPanel('pc')"><span>🟢 智能预检</span><span class="cp-toggle">▲</span></div>
-          <div class="cp-body">
-            <div class="cp-row">
-              <label class="cp-switch"><input type="checkbox" id="pc_enabled" onchange="onCfgChange('pc')"><span class="cp-slider"></span></label>
-              <span style="font-size:13px">启用预检</span>
-              <span style="font-size:11px;color:var(--text-2);margin-left:8px">关闭后所有请求直接走路由/默认</span>
-            </div>
-            <div class="field-row-3">
-              <div class="field"><label>模型</label><input id="pc_model" placeholder="deepseek-v4-flash" onchange="onCfgChange('pc')" oninput="updateChain()"></div>
-              <div class="field"><label>Provider</label><input id="pc_provider" placeholder="deepseek" onchange="onCfgChange('pc')"></div>
-              <div class="field"><label>密钥</label><select id="pc_key" onchange="onKeySelect('pc'); onCfgChange('pc'); updateChain()"></select></div>
-            </div>
-            <div class="field-row-2">
-              <div class="field"><label>端点</label><input id="pc_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(0,0,0,.4)"></div>
-              <div class="field" style="display:flex;align-items:flex-end"><button class="probe-btn" id="pc_probeBtn" onclick="probeModels('pc')" disabled>🔍 探测</button></div>
-            </div>
-            <div id="pc_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
-          </div>
-        </div>
-
-        <div class="cfg-panel" id="cfg-def" style="display:none">
-          <div class="cp-head" onclick="toggleCfgPanel('def')"><span>🔵 默认模型</span><span class="cp-toggle">▲</span></div>
-          <div class="cp-body">
-            <div class="field-row-3">
-              <div class="field"><label>模型</label><input id="def_model" placeholder="deepseek-v4-flash" onchange="onCfgChange('def')" oninput="updateChain()"></div>
-              <div class="field"><label>Provider</label><input id="def_provider" placeholder="deepseek" onchange="onCfgChange('def')"></div>
-              <div class="field"><label>密钥</label><select id="def_key" onchange="onKeySelect('def'); onCfgChange('def'); updateChain()"></select></div>
-            </div>
-            <div class="field-row-2">
-              <div class="field probe-group">
-                <label>端点</label>
-                <input id="def_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(0,0,0,.4)">
-                <button class="probe-btn" id="def_probeBtn" onclick="probeModels('def')" disabled>🔍 探测</button>
-              </div>
-            </div>
-            <div id="def_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
-          </div>
-        </div>
-
-        <div class="cfg-panel" id="cfg-fb" style="display:none">
-          <div class="cp-head" onclick="toggleCfgPanel('fb')"><span>🟡 降级兜底</span><span class="cp-toggle">▲</span></div>
-          <div class="cp-body">
-            <div class="cp-hint">当默认模型请求失败（如429超限、网络错误）时自动切换到降级模型</div>
-            <div class="field-row-3">
-              <div class="field"><label>模型</label><input id="fb_model" placeholder="glm-4.7" onchange="onCfgChange('fb')" oninput="updateChain()"></div>
-              <div class="field"><label>Provider</label><input id="fb_provider" placeholder="glm" onchange="onCfgChange('fb')"></div>
-              <div class="field"><label>密钥</label><select id="fb_key" onchange="onKeySelect('fb'); onCfgChange('fb'); updateChain()"></select></div>
-            </div>
-            <div class="field-row-2">
-              <div class="field probe-group">
-                <label>端点</label>
-                <input id="fb_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(0,0,0,.4)">
-                <button class="probe-btn" id="fb_probeBtn" onclick="probeModels('fb')" disabled>🔍 探测</button>
-              </div>
-            </div>
-            <div id="fb_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
-          </div>
-        </div>
-
-        <div style="display:flex;gap:12px;margin-top:16px;padding:0 16px 16px" id="cfgSaveBar">
-          <button class="btn-primary" onclick="saveConfigFull()" style="flex:1;padding:10px;font-size:13px">💾 保存设置</button>
-          <button onclick="fetchAll()" style="padding:10px 16px;font-size:13px;background:var(--bg-glass);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer">↻ 撤销更改</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-pane" id="pane-logs">
-      <div class="logs-wrap">
-        <div class="logs-header">
-          <div class="left"><h3>运行日志</h3><div class="filter-group" id="logFilters"><button class="active" data-filter="all">全部</button><button data-filter="error">错误</button><button data-filter="fallback">降级</button><button data-filter="route">路由</button><button data-filter="call">调用</button></div></div>
-        </div>
-        <div class="logs-body" id="logsBody"></div>
-        <div class="logs-footer">
-          <span id="logMeta"></span>
-          <div class="auto-scroll"><input type="checkbox" id="autoScroll" checked><label for="autoScroll">自动滚动</label></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ MODALS ═══ -->
-<div class="modal-overlay" id="routeModal">
-  <div class="modal">
-    <div class="m-h" id="routeModalTitle">新建路由</div>
-    <div class="m-b">
-      <div class="field"><label>名称</label><input id="rm_name" placeholder="MiMo 2.5 Pro"></div>
+    <!-- 添加模型 -->
+    <div class="card">
+      <h2 id="addTitle">添加模型</h2>
       <div class="field">
-        <label>用途分类</label>
-        <select id="rm_usage" onchange="onUsageChange()">
-          <option value="code">代码/运维</option>
-          <option value="reason">推理/分析</option>
-          <option value="vision">图片/视觉</option>
-          <option value="daily">日常/兜底</option>
-        </select>
+        <label for="f_label">路由名 (label，英文字母，如 openai)</label>
+        <input type="text" id="f_label" placeholder="openai" autocomplete="off" />
       </div>
       <div class="field">
-        <label>匹配关键词（正则，逗号分隔）</label>
-        <textarea id="rm_pattern" rows="2" placeholder="代码,编程,部署,debug,git" style="resize:vertical"></textarea>
-        <div class="hint">输入文本测试匹配：<input type="text" id="rm_testInput" placeholder="输入测试文本..." style="display:inline-block;width:auto;font-size:11px;padding:3px 8px;margin-left:4px;background:rgba(0,0,0,0.3);border:1px solid var(--brd);border-radius:4px" onkeydown="if(event.key==='Enter')testRouteMatch()"></div>
-        <div id="rm_testResult" style="display:none;font-size:11px;margin-top:4px;padding:4px 8px;border-radius:4px"></div>
-      </div>
-      <div class="field-row-2">
-        <div class="field"><label>模型</label><input id="rm_model" placeholder="mimo-v2.5-pro"></div>
-        <div class="field"><label>Provider</label><input id="rm_provider" placeholder="xiaomi"></div>
-      </div>
-      <div class="field-row-2" style="margin-top:14px">
-        <div class="field"><label>选择密钥</label><select id="rm_key" onchange="onRouteKeySelect()"></select></div>
-        <div class="field"><label>端点</label><input id="rm_ep" placeholder="选择密钥后自动填充" readonly style="background:rgba(0,0,0,.4)"></div>
+        <label for="f_model">模型 ID</label>
+        <input type="text" id="f_model" placeholder="gpt-4o" autocomplete="off" />
       </div>
       <div class="field">
-        <div class="probe-group"><button id="rm_probeBtn" onclick="probeModels('rm')" disabled>🔍 探测可用模型</button></div>
-        <div id="rm_probeResult" class="probe-models" style="display:none;margin-top:4px"></div>
+        <label for="f_endpoint">API 端点 (OpenAI 兼容 /v1/chat/completions)</label>
+        <input type="text" id="f_endpoint" placeholder="https://api.openai.com/v1/chat/completions" autocomplete="off" />
       </div>
+      <div class="field">
+        <label for="f_key">API Key（新模型必填，探测模型也需要）</label>
+        <input type="password" id="f_key" placeholder="sk-..." autocomplete="off" />
+      </div>
+      <button class="btn btn-secondary" id="probeBtn">探测可用模型</button>
+      <div id="probeResult" class="hidden" style="margin-top:10px"></div>
+      <p class="hint">填好端点和 Key 后点探测，选中模型自动填入上方「模型 ID」。</p>
+      <div class="field" style="margin-top:14px">
+        <label for="f_provider">Provider (可选，默认=label)</label>
+        <input type="text" id="f_provider" placeholder="openai" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="f_usage">用途描述（喂给 AI 路由做语义分类）</label>
+        <textarea id="f_usage" placeholder="深度分析、逻辑推理、代码审查、长文本总结、多语言写作。关键词：分析、推理、评估、总结…"></textarea>
+      </div>
+      <div class="field">
+        <label for="f_pattern">正则关键词（可选，留空则纯靠 AI 路由）</label>
+        <input type="text" id="f_pattern" placeholder="分析|推理|评估|策略" autocomplete="off" />
+      </div>
+      <button class="btn btn-primary" id="addBtn">添加 / 更新模型</button>
+      <p class="hint">路由策略由 AI 语义分类自动决定。添加后立即热加载生效。</p>
     </div>
-    <div class="m-footer">
-      <button onclick="closeModal('routeModal')">取消</button>
-      <button class="btn-danger" id="rm_deleteBtn" onclick="deleteRoute()" style="display:none">删除</button>
-      <button class="btn-primary" onclick="saveRoute()">保存</button>
-    </div>
-  </div>
-</div>
 
-<div class="modal-overlay" id="keyModal">
-  <div class="modal">
-    <div class="m-h" id="keyModalTitle">添加自定义密钥</div>
-    <div class="m-b">
-      <div id="keyCascadeWarn" class="cascade-warn" style="display:none"></div>
-      <div class="field"><label>别名</label><input id="km_name" placeholder="deepseek, openrouter, xiaomi"><div class="hint">小写英文+下划线</div></div>
-      <div class="field"><label>API 密钥</label><input id="km_val" placeholder="sk-..." type="password"></div>
-      <div class="field"><label>端点 URL</label><input id="km_ep" placeholder="https://api.deepseek.com/v1/chat/completions"></div>
-      <div class="field" style="margin-top:4px">
-        <button id="km_probeBtn" onclick="probeModels('km')" class="probe-btn">🔍 测试连接并探测模型</button>
-        <div id="km_probeResult" class="probe-models" style="display:none;margin-top:6px"></div>
-      </div>
+    <!-- 模型列表 -->
+    <div class="card">
+      <h2>已配置模型 <span class="count" id="routeCount">0</span></h2>
+      <div id="routeList"><div class="empty">加载中…</div></div>
     </div>
-    <div class="m-footer">
-      <button onclick="closeModal('keyModal')">取消</button>
-      <button class="btn-danger" id="km_deleteBtn" onclick="deleteCurrentKey()" style="display:none">删除</button>
-      <button class="btn-primary" onclick="saveKey()">保存</button>
-    </div>
-  </div>
-</div>
 
-<div class="modal-overlay" id="delKeyConfirmModal">
-  <div class="modal">
-    <div class="m-h">确认删除密钥</div>
-    <div class="m-b">
-      <p id="delKeyMsg" style="font-size:13px;margin-bottom:14px"></p>
-      <div id="delKeyAffected" style="display:none;margin-top:8px">
-        <p style="font-size:12px;color:var(--text-2);margin-bottom:6px">以下配置正在使用此密钥：</p>
-        <ul id="delKeyAffectedList" style="font-size:12px;color:var(--red);margin-left:18px;line-height:1.8"></ul>
-        <p style="font-size:11px;color:var(--text-2);margin-top:8px">删除后这些配置将失效</p>
-      </div>
-    </div>
-    <div class="m-footer">
-      <button onclick="closeModal('delKeyConfirmModal')">取消</button>
-      <button class="btn-danger" onclick="confirmDeleteKey()">确认删除</button>
-    </div>
+    <button class="btn btn-ghost" id="reloadBtn">重新加载配置</button>
+    <button class="btn btn-ghost" id="logoutBtn" style="margin-top:8px">退出登录</button>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-// ═══ STATE ═══
-var TOKEN = null, cfg = null, st = null, routeEditIdx = -1, keyEditName = null, pendingDeleteKey = null
-var allLogs = [], logFilter = 'all'
-var KEYS_SELECTOR = {}
-var PROBE_CACHE = {}
-var USAGE_KEYWORDS = {
-  code: '代码,编程,写程序,重构,部署,deploy,运维,server,nginx,docker,systemctl,ssh,git,commit,PR,config,shell,bash,脚本,修复,报错,error,exception,traceback,日志分析,调试,debug,cron,备份,安装,apt,pip,npm,编译,make,测试,test,pytest',
-  reason: '分析,对比,比较,推理,为什么,原因,根因,深度,论证,评估,策略,方案,设计架构,优缺点,权衡,决策,审查,审计,review,评审',
-  vision: '图片,截图,照片,图像,看图,OCR,识别图,vision,视觉,多媒体',
-  daily: ''
-}
+(function(){
+  var TOKEN = localStorage.getItem("thal_token") || "";
+  var BASE = "";
 
-// ═══ HELPERS ═══
-function rn(s,n){return s&&s.length>n?s.slice(0,n)+'…':s||''}
-function esc(s){if(typeof s!=='string')return s||''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;')}
-function toast(msg,isErr){var e=document.getElementById('toast'); e.innerHTML=msg; e.className='toast show '+(isErr?'err':'ok'); clearTimeout(e._t); e._t=setTimeout(function(){e.className='toast'},2500)}
-function closeModal(id){document.getElementById(id).classList.remove('show')}
-function getKeyEndpoint(alias){var k=KEYS_SELECTOR[alias]; return k?k.endpoint||'':''}
-function getKeyLabel(alias){var k=KEYS_SELECTOR[alias]; if(!k)return alias; var e=k.endpoint?' · '+rn(k.endpoint,40):''; return alias+(k.type==='env'?' (env)':'')+e}
+  function $id(id){ return document.getElementById(id); }
+  function show(el){ el.classList.remove("hidden"); }
+  function hide(el){ el.classList.add("hidden"); }
 
-// ═══ API ═══
-function api(method, path, body) {
-  var opts = {method:method, headers:{}}
-  if (TOKEN) opts.headers['Authorization'] = 'Bearer ' + TOKEN
-  if (body) {opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body)}
-  return fetch(path, opts).then(function(r){
-    if (r.status===401) {doLogout(); throw new Error('Unauthorized')}
-    return r.json().then(function(j){if (j.error) throw new Error(j.error); return j})
-  })
-}
-
-// ═══ LOGIN ═══
-function doLogin() {
-  var pwd=document.getElementById('pwdInput').value; if(!pwd) return
-  var btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='验证中...'
-  api('POST','/admin/api/login',{password:pwd}).then(function(d){
-    TOKEN=d.token
-    try{localStorage.setItem('thalamus_token',d.token)}catch(e){}
-    document.getElementById('loginWrap').style.display='none'
-    document.getElementById('app').className='app show'
-    fetchAll()
-  }).catch(function(e){
-    document.getElementById('loginErr').textContent=e.message||'登录失败'
-    btn.disabled=false; btn.textContent='登录'
-  })
-}
-function doLogout() {
-  TOKEN = null
-  try{localStorage.removeItem('thalamus_token')}catch(e){}
-  document.getElementById('loginWrap').style.display = 'flex'
-  document.getElementById('app').className='app'
-  document.getElementById('pwdInput').value=''; document.getElementById('loginErr').textContent=''
-}
-
-// Auto-restore token from localStorage on load
-try{var saved=localStorage.getItem('thalamus_token'); if(saved){TOKEN=saved; document.getElementById('loginWrap').style.display='none'; document.getElementById('app').className='app show'; fetchAll()}}catch(e){}
-
-// ═══ SIDEBAR NAV ═══
-document.querySelectorAll('.s-nav button').forEach(function(t){
-  t.addEventListener('click',function(){
-    document.querySelectorAll('.s-nav button').forEach(function(x){x.classList.remove('active')})
-    document.querySelectorAll('.tab-pane').forEach(function(x){x.classList.remove('active')})
-    this.classList.add('active')
-    document.getElementById('pane-'+this.dataset.tab).classList.add('active')
-  })
-})
-
-// Log filter
-document.getElementById('logFilters').addEventListener('click',function(e){
-  if(e.target.tagName!=='BUTTON')return
-  this.querySelectorAll('button').forEach(function(b){b.classList.remove('active')})
-  e.target.classList.add('active'); logFilter=e.target.dataset.filter; applyLogFilter()
-})
-
-// ═══ FETCH ═══
-function fetchAll() {
-  Promise.all([
-    api('GET','/admin/api/config'),
-    api('GET','/admin/api/stats'),
-    api('GET','/admin/api/logs'),
-    api('GET','/admin/api/balances')
-  ]).then(function(r){
-    cfg=r[0]; st=r[1]; refreshKeySelector(); renderCards(r[3])
-    renderRoutes(); renderKeys(); renderConfig(); renderLogs(r[2])
-  }).catch(function(e){toast(e.message,true)})
-}
-function reloadRoutes() {
-  api('POST','/admin/api/reload').then(function(){toast('已重载'); fetchAll()}).catch(function(e){toast(e.message,true)})
-}
-function restartService() {
-  if(!confirm('确认重启 Thalamus 服务？面板将短暂断开，systemd 会在 1-2 秒内自动拉起。'))return
-  var btn=event&&event.target; if(btn){btn.disabled=true; btn.textContent='⏳ 重启中...'}
-  api('POST','/admin/api/restart').then(function(){toast('已发送重启指令，等待服务恢复...')}).catch(function(e){toast(e.message,true)})
-  setTimeout(function(){if(btn){btn.disabled=false;btn.innerHTML='🔁'}; fetchAll()},5000)
-}
-function resetTokenStats(){
-  if(!confirm('确认重置 Token 统计计数器？\\n\\n当前总数将被清零（旧数据仍保留在日志中）。'))return
-  var btn=event&&event.target; if(btn){btn.disabled=true; btn.textContent='⏳...'}
-  api('GET','/stats/reset').then(function(d){
-    var p=d.previous||{}
-    toast('已重置。之前: '+fmtTok(p.total_tokens||0)+', '+Object.keys(p.token_by_label||{}).length+' 个路由')
-    fetchAll()
-  }).catch(function(e){toast(e.message,true)}).finally(function(){if(btn)btn.disabled=false})
-}
-function refreshKeySelector() {
-  KEYS_SELECTOR={}; if(!cfg) return
-  if(cfg.custom_keys) for(var k in cfg.custom_keys){var v=cfg.custom_keys[k]; KEYS_SELECTOR[k]={endpoint:v.endpoint||'',type:'custom',key:v.key||''}}
-  if(cfg.env_keys) for(var k in cfg.env_keys){var v=cfg.env_keys[k]; KEYS_SELECTOR[k]={endpoint:v.endpoint||'',type:'env',prefix:v.prefix||''}}
-}
-
-function populateSelect(id) {
-  var sel=document.getElementById(id); if(!sel) return
-  sel.innerHTML='<option value="">— 选择密钥 —</option>'
-  Object.keys(KEYS_SELECTOR).sort().forEach(function(k){
-    var o=document.createElement('option'); o.value=k; o.textContent=getKeyLabel(k); sel.appendChild(o)
-  })
-}
-
-function onKeySelect(pfx){
-  var sel=document.getElementById(pfx+'_key'), ep=document.getElementById(pfx+'_ep'), btn=document.getElementById(pfx+'_probeBtn')
-  var res=document.getElementById(pfx+'_probeResult')
-  if(sel.value&&KEYS_SELECTOR[sel.value]){ep.value=KEYS_SELECTOR[sel.value].endpoint; if(btn)btn.disabled=false}
-  else{ep.value=''; if(btn)btn.disabled=true}
-  if(res){res.style.display='none'; res.innerHTML=''}
-}
-function onRouteKeySelect(){
-  var sel=document.getElementById('rm_key'), ep=document.getElementById('rm_ep'), btn=document.getElementById('rm_probeBtn'), res=document.getElementById('rm_probeResult')
-  if(sel.value&&KEYS_SELECTOR[sel.value]){ep.value=KEYS_SELECTOR[sel.value].endpoint; btn.disabled=false}
-  else{ep.value=''; btn.disabled=true}
-  if(res){res.style.display='none'; res.innerHTML=''}
-}
-
-// ═══ PROBE ═══
-function probeModels(ctx) {
-  var keyAlias, btn, resultEl, modelInput
-  if(ctx==='rm'){keyAlias=document.getElementById('rm_key').value; btn=document.getElementById('rm_probeBtn'); resultEl=document.getElementById('rm_probeResult'); modelInput=document.getElementById('rm_model')}
-  else if(ctx==='pc'){keyAlias=document.getElementById('pc_key').value; btn=document.getElementById('pc_probeBtn'); resultEl=document.getElementById('pc_probeResult'); modelInput=document.getElementById('pc_model')}
-  else if(ctx==='def'){keyAlias=document.getElementById('def_key').value; btn=document.getElementById('def_probeBtn'); resultEl=document.getElementById('def_probeResult'); modelInput=document.getElementById('def_model')}
-  else if(ctx==='fb'){keyAlias=document.getElementById('fb_key').value; btn=document.getElementById('fb_probeBtn'); resultEl=document.getElementById('fb_probeResult'); modelInput=document.getElementById('fb_model')}
-  else if(ctx==='km'){probeKeyAddModal(); return}
-  else return
-  if(!keyAlias){toast('请先选择密钥',true); return}
-  if(!KEYS_SELECTOR[keyAlias]){toast('密钥不存在',true); return}
-  var k=KEYS_SELECTOR[keyAlias]; if(!k.endpoint){toast('密钥没有端点',true); return}
-  if(PROBE_CACHE[keyAlias]&&(Date.now()-PROBE_CACHE[keyAlias].ts)<60000){
-    showProbeModels(resultEl,modelInput,PROBE_CACHE[keyAlias].models,keyAlias); return
+  var toastTimer = null;
+  function toast(msg, type){
+    var t = $id("toast");
+    t.textContent = msg;
+    t.className = "toast show " + (type||"");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.className = "toast"; }, 2600);
   }
-  btn.disabled=true; resultEl.style.display='block'; resultEl.innerHTML='<span style="color:var(--text-2)">探测中...</span>'
-  api('POST','/admin/api/keys/probe',{name:keyAlias}).then(function(d){
-    PROBE_CACHE[keyAlias]={models:d.models,ts:Date.now()}
-    showProbeModels(resultEl,modelInput,d.models,keyAlias); btn.disabled=false
-  }).catch(function(e){resultEl.innerHTML='<span style="color:var(--red)">探测失败: '+esc(e.message)+'</span>'; btn.disabled=false})
-}
-function showProbeModels(el,mi,models,keyAlias){
-  el.style.display='block'
-  if(!models||!models.length){el.innerHTML='<span style="color:var(--text-2)">无可用模型</span>'; return}
-  var TAG_LABELS={multi:'🖼️多模态',reason:'🧠推理',code:'💻代码',fast:'⚡轻量'}
-  var TAG_COLORS={multi:'#a855f7',reason:'#3b82f6',code:'#22c55e',fast:'#6e7681'}
-  var h=''
-  models.forEach(function(m){
-    var tags=(m.tags||[]).map(function(t){var lb=TAG_LABELS[t]||t; var cl=TAG_COLORS[t]||'var(--text-2)'; return '<span style="display:inline-block;padding:0 6px;margin:0 2px;border-radius:3px;font-size:9px;background:'+cl+'20;color:'+cl+';font-weight:500">'+lb+'</span>'}).join('')
-    h+='<div class="m-card" data-mid="'+esc(m.id)+'" data-ka="'+esc(keyAlias)+'" data-mi="'+mi.id+'" onclick="pickModel(this)"><span class="m-id">'+esc(m.id)+'</span> '+tags+'</div>'
-  })
-  el.innerHTML=h+'<div style="margin-top:4px;color:var(--text-2);font-size:10px">点击卡片自动填入</div>'
-}
-function pickModel(el){
-  var mid=el.getAttribute('data-mid'), ka=el.getAttribute('data-ka'), miId=el.getAttribute('data-mi')
-  document.getElementById(miId).value=mid
-  var k=KEYS_SELECTOR[ka]
-  if(k){
-    // Provider: parse from modelID (e.g. "openai/gpt-4o" → "openai"), fallback to key alias
-    var prov=mid.indexOf('/')>0?mid.split('/')[0]:ka
-    var prEl=document.getElementById(miId.replace('model','provider'))
-    if(prEl)prEl.value=prov
+
+  function api(path, method, body){
+    var opts = { method: method||"GET", headers: {} };
+    if (TOKEN) opts.headers["Authorization"] = "Bearer " + TOKEN;
+    if (body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+    return fetch(BASE + path, opts).then(function(r){
+      return r.json().catch(function(){ return {error:"Invalid response"}; }).then(function(data){
+        data._status = r.status;
+        return data;
+      });
+    });
   }
-  // Auto-fill route name (label) from model name
-  var nmEl=document.getElementById('rm_name')
-  if(nmEl&&!nmEl.value.trim()){
-    var label=mid.split('/').pop().split('-').map(function(s){return s.charAt(0).toUpperCase()+s.slice(1)}).join(' ')
-    nmEl.value=label
+
+  function showLogin(){
+    show($id("loginScreen")); hide($id("mainScreen"));
   }
-  document.querySelectorAll('.probe-models .m-card').forEach(function(c){c.classList.remove('sel')})
-  el.classList.add('sel')
-}
-function probeKeyAddModal(){
-  var name=document.getElementById('km_name').value.trim(), key=document.getElementById('km_val').value.trim(), ep=document.getElementById('km_ep').value.trim()
-  if(!name||!key){toast('请先填写密钥',true); return}
-  if(!ep){toast('请先填写端点URL',true); return}
-  document.getElementById('km_probeBtn').disabled=true
-  document.getElementById('km_probeResult').style.display='block'
-  document.getElementById('km_probeResult').innerHTML='<span style="color:var(--text-2)">保存并探测中...</span>'
-  api('POST','/admin/api/keys/add',{name:name,key:key,endpoint:ep}).then(function(){
-    return api('POST','/admin/api/keys/probe',{name:name})
-  }).then(function(d){
-    var h=''
-    d.models.forEach(function(m){h+='<span class="m" style="cursor:default">'+esc(m.id)+'</span> '})
-    document.getElementById('km_probeResult').innerHTML=h||'<span style="color:var(--green)">✅ 连接成功</span>'
-    toast('密钥已保存'); fetchAll()
-    document.getElementById('km_probeBtn').disabled=false
-  }).catch(function(e){document.getElementById('km_probeResult').innerHTML='<span style="color:var(--red)">探测失败: '+esc(e.message)+'</span>'; document.getElementById('km_probeBtn').disabled=false})
-}
-
-// ═══ CARDS ═══
-function renderCards(bal){
-  var calls=(st&&st.calls)||0, dur=(st&&st.uptime_seconds)||0, prov=Object.keys(st&&st.by_provider||{}).length, fb=(st&&st.fallbacks)||0
-  var bc=(st&&st.berserker_calls)||0, bt=(st&&st.berserker_tokens)||0, bp=(st&&st.berserker_perspectives)||0
-  var tt=(st&&st.total_tokens)||0, tbp=(st&&st.token_by_label)||{}
-  var h='<div class="card"><div class="icon">📊</div><div class="label">总调度</div><div class="value blue">'+calls+'</div><div class="sub">次请求</div></div>'
-  h+='<div class="card"><div class="icon">⏱️</div><div class="label">运行时长</div><div class="value purple">'+fmtDur(dur)+'</div><div class="sub">持续运行</div></div>'
-  h+='<div class="card"><div class="icon">🔌</div><div class="label">活跃 Provider</div><div class="value green">'+prov+'</div><div class="sub">个模型</div></div>'
-  h+='<div class="card"><div class="icon">🔄</div><div class="label">Fallback</div><div class="value '+(fb>0?'yellow':'green')+'">'+fb+'</div><div class="sub">'+(fb>0?'次降级':'无降级')+'</div></div>'
-  h+='<div class="card"><div class="icon">🔢</div><div class="label">Token 总量</div><div class="value blue">'+fmtTok(tt)+'</div><div class="sub">'+(Object.keys(tbp).length||'0')+' 个路由</div></div>'
-  if(bc>0){
-    h+='<div class="card"><div class="icon">⚡</div><div class="label">狂暴模式</div><div class="value yellow">'+bc+'</div><div class="sub">'+bc+'次 · '+fmtTok(bt)+'</div></div>'
-    h+='<div class="card"><div class="icon">👁️</div><div class="label">总视角数</div><div class="value blue">'+bp+'</div><div class="sub">'+Math.round(bt/(bc||1))+' tok/次</div></div>'
+  function showMain(){
+    hide($id("loginScreen")); show($id("mainScreen"));
+    loadAll();
   }
-  document.getElementById('cardsBox').innerHTML=h
-}
-function fmtDur(s){if(s<60)return Math.round(s)+'s'; if(s<3600)return Math.floor(s/60)+'m '+Math.round(s%60)+'s'; if(s<86400)return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'; return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h'}
-function fmtTok(n){if(n>=1e6)return (n/1e6).toFixed(1)+'M tok'; if(n>=1e3)return (n/1e3).toFixed(1)+'K tok'; return n+' tok'}
 
-// ═══ ROUTES ═══
-function renderRoutes(){
-  var routes=(cfg&&cfg.routes)||[]
-  document.getElementById('routeCount').textContent=routes.length
-  if(!routes.length){document.getElementById('routesBody').innerHTML=''; document.getElementById('routesEmpty').style.display='block'; return}
-  document.getElementById('routesEmpty').style.display='none'
-  var h=''
-  for(var i=0;i<routes.length;i++){
-    var r=routes[i], pat=r.pattern||''
-    var tc=r.usage||'daily',tl='日常'
-    if(tc==='code'){tl='代码/运维'}
-    else if(tc==='reason'){tl='推理/分析'}
-    else if(tc==='vision'){tl='图片/视觉'}
-    h+='<tr>'
-    h+='<td><span class="tag '+tc+'">'+tl+'</span></td>'
-    h+='<td contenteditable onblur="onCellEdit('+i+',\'label\',this)" onkeydown="onCellKey(event,'+i+',\'label\',this)">'+esc(r.label)+'</td>'
-    h+='<td contenteditable onblur="onCellEdit('+i+',\'model\',this)" onkeydown="onCellKey(event,'+i+',\'model\',this)"><span class="mono">'+esc(r.model)+'</span></td>'
-    h+='<td contenteditable onblur="onCellEdit('+i+',\'provider\',this)" onkeydown="onCellKey(event,'+i+',\'provider\',this)"><span class="mono">'+esc(r.provider)+'</span></td>'
-    h+='<td><span class="mono">'+esc(r.key_env||'')+'</span></td>'
-    h+='<td><span class="mono" title="'+esc(r.endpoint||'')+'">'+esc(rn(r.endpoint||'',40))+'</span></td>'
-    var proxyOn=r.proxy===true
-    h+='<td style="text-align:center"><label class="proxy-toggle" onclick="toggleProxy('+i+')"><input type="checkbox" '+(proxyOn?'checked':'')+'><span class="psl">'+(proxyOn?'🌐':'🔓')+'</span></label></td>'
-    h+='<td style="text-align:center"><button class="e-btn" onclick="openRoute('+i+')">编辑</button></td>'
-    h+='</tr>'
+  function login(){
+    var pwd = $id("pwd").value;
+    if(!pwd){ toast("请输入密码","error"); return; }
+    api("/admin/api/login","POST",{password:pwd}).then(function(data){
+      if(data.token){
+        TOKEN = data.token;
+        localStorage.setItem("thal_token", TOKEN);
+        toast("登录成功","ok");
+        showMain();
+      } else {
+        toast(data.error || "登录失败","error");
+      }
+    }).catch(function(e){ toast("请求失败","error"); });
   }
-  document.getElementById('routesBody').innerHTML=h
-}
-function onCellKey(ev,i,f,el){if(ev.key==='Enter'){ev.preventDefault();el.blur()}if(ev.key==='Escape'){el.textContent=getRF(i,f);el.blur()}}
-function getRF(i,f){var r=(cfg&&cfg.routes&&cfg.routes[i])||{}; return r[f]||''}
-function onCellEdit(i,f,el){
-  var v=el.textContent.trim(), o=getRF(i,f)
-  if(v===o||!cfg||!cfg.routes||!cfg.routes[i])return
-  cfg.routes[i][f]=v; debSaveRoutes()
-}
-function toggleProxy(i){
-  if(!cfg||!cfg.routes||!cfg.routes[i])return
-  cfg.routes[i].proxy=!cfg.routes[i].proxy
-  debSaveRoutes(); renderRoutes()
-}
-var saveTimer=null
-function debSaveRoutes(){if(saveTimer)clearTimeout(saveTimer); saveTimer=setTimeout(saveConfigFull,800)}
-function saveConfigFull(){
-  var d={
-    action:'update_defaults',
-    routes:cfg.routes,
-    default:{model:document.getElementById('def_model').value.trim(),provider:document.getElementById('def_provider').value.trim(),endpoint:document.getElementById('def_ep').value,key_env:document.getElementById('def_key').value},
-    fallback:{model:document.getElementById('fb_model').value.trim(),provider:document.getElementById('fb_provider').value.trim(),endpoint:document.getElementById('fb_ep').value,key_env:document.getElementById('fb_key').value},
-    precheck:{enabled:document.getElementById('pc_enabled').checked,model:document.getElementById('pc_model').value.trim(),provider:document.getElementById('pc_provider').value.trim(),endpoint:document.getElementById('pc_ep').value,key_env:document.getElementById('pc_key').value}
+
+  function esc(s){
+    return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
   }
-  api('POST','/admin/api/config',d).then(function(){toast('已保存')}).catch(function(e){toast(e.message,true)})
-}
 
-// ═══ ROUTE MODAL ═══
-function openRoute(idx){
-  routeEditIdx=idx; populateSelect('rm_key')
-  var r=(idx>=0&&cfg&&cfg.routes&&cfg.routes[idx])||{}
-  document.getElementById('rm_name').value=r.label||''
-  document.getElementById('rm_model').value=r.model||''
-  document.getElementById('rm_provider').value=r.provider||''
-  document.getElementById('rm_testInput').value=''; document.getElementById('rm_testResult').style.display='none'
-  document.getElementById('rm_deleteBtn').style.display=idx>=0?'inline-block':'none'
-  document.getElementById('routeModalTitle').textContent=idx>=0?'编辑路由':'新建路由'
-  var pat=r.pattern||'', usage='daily'
-  if(pat.indexOf('代码')>=0||pat.indexOf('部署')>=0||pat.indexOf('git')>=0)usage='code'
-  else if(pat.indexOf('分析')>=0||pat.indexOf('推理')>=0)usage='reason'
-  else if(pat.indexOf('图片')>=0||pat.indexOf('vision')>=0)usage='vision'
-  document.getElementById('rm_usage').value=usage
-  document.getElementById('rm_pattern').value=pat||USAGE_KEYWORDS[usage]||''
-  var ka=r.key_env||''
-  var sel=document.getElementById('rm_key')
-  sel.value=ka
-  if(sel.value!==ka && ka){
-    var opt=document.createElement('option'); opt.value=ka; opt.text=ka+' (自定义)'
-    sel.insertBefore(opt,sel.options[1]); sel.value=ka
+  function renderStatus(data){
+    var h = "";
+    var ai = data.ai_routing || {};
+    h += '<span class="status-pill"><span class="dot '+(ai.enabled?"":"off")+'"></span>AI 路由 '+(ai.enabled?"ON":"OFF")+'</span>';
+    h += '<span class="status-pill"><span class="dot"></span>模式 '+esc(ai.mode||"fallback")+'</span>';
+    h += '<span class="status-pill"><span class="dot"></span>分类模型 '+esc(ai.model||"—")+'</span>';
+    var d = data.default||{};
+    h += '<span class="status-pill"><span class="dot"></span>默认 '+esc(d.model||"—")+'</span>';
+    $id("statusPills").innerHTML = h;
   }
-  document.getElementById('rm_ep').value=r.endpoint||getKeyEndpoint(ka)
-  document.getElementById('rm_probeBtn').disabled=!ka
-  document.getElementById('rm_probeResult').style.display='none'
-  document.getElementById('routeModal').classList.add('show')
-}
-function saveRoute(){
-  var r={label:document.getElementById('rm_name').value.trim(),model:document.getElementById('rm_model').value.trim(),provider:document.getElementById('rm_provider').value.trim(),key_env:document.getElementById('rm_key').value,endpoint:document.getElementById('rm_ep').value,pattern:document.getElementById('rm_pattern').value.trim(),usage:document.getElementById('rm_usage').value}
-  if(!r.label){toast('请输入名称',true); return}
-  if(!r.key_env && routeEditIdx>=0 && cfg.routes[routeEditIdx]){
-    r.key_env = cfg.routes[routeEditIdx].key_env || ''
-    r.endpoint = cfg.routes[routeEditIdx].endpoint || ''
+
+  function renderRoutes(data){
+    var routes = data.routes||[];
+    $id("routeCount").textContent = routes.length;
+    if(!routes.length){ $id("routeList").innerHTML = '<div class="empty">暂无模型，先添加一个</div>'; return; }
+    var h = "";
+    routes.forEach(function(r){
+      h += '<div class="route">';
+      h += '<div class="route-head"><span class="route-name">'+esc(r.label)+'</span>';
+      h += '<button class="btn btn-sm btn-danger" data-del="'+esc(r.label)+'">删除</button></div>';
+      h += '<div class="route-model">'+esc(r.model)+'</div>';
+      h += '<div class="route-meta">'+esc(r.provider)+' · '+esc(r.endpoint)+'</div>';
+      h += '<div class="route-tags">';
+      h += r.has_key ? '<span class="tag key-ok">Key 已配置</span>' : '<span class="tag key-miss">Key 缺失</span>';
+      if(r.usage) h += '<span class="tag">'+esc(r.usage.slice(0,24))+(r.usage.length>24?"…":"")+'</span>';
+      if(r.proxy) h += '<span class="tag">proxy</span>';
+      h += '</div></div>';
+    });
+    $id("routeList").innerHTML = h;
+
+    // 绑定删除
+    document.querySelectorAll("[data-del]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var label = btn.getAttribute("data-del");
+        if(!confirm("删除模型 '"+label+"'？")) return;
+        api("/admin/api/routes/delete","POST",{label:label}).then(function(data){
+          if(data.status==="ok"){ toast("已删除","ok"); loadAll(); }
+          else toast(data.error||"删除失败","error");
+        });
+      });
+    });
   }
-  if(routeEditIdx>=0){
-    r.proxy=cfg.routes[routeEditIdx].proxy===true
-    cfg.routes[routeEditIdx]=r
-  }else{if(!cfg.routes)cfg.routes=[]; cfg.routes.push(r)}
-  closeModal('routeModal'); saveConfigFull(); renderRoutes()
-}
-function deleteRoute(){
-  if(routeEditIdx<0||!confirm('确认删除？'))return
-  cfg.routes.splice(routeEditIdx,1); closeModal('routeModal'); saveConfigFull(); renderRoutes()
-}
-function onUsageChange(){
-  var u=document.getElementById('rm_usage').value, cur=document.getElementById('rm_pattern').value.trim()
-  var isDefault = false
-  for(var k in USAGE_KEYWORDS){
-    if(USAGE_KEYWORDS[k] === cur){isDefault = true; break}
+
+  function loadAll(){
+    api("/admin/api/routes/list").then(function(data){
+      if(data._status===401){
+        localStorage.removeItem("thal_token");
+        showLogin(); toast("登录已过期，请重新登录","error");
+        return;
+      }
+      if(data.status!=="ok"){
+        $id("subtitle").textContent = "加载失败";
+        toast(data.error||"加载失败","error");
+        return;
+      }
+      $id("subtitle").textContent = "路由策略由 AI 语义分类自动决定";
+      renderStatus(data);
+      renderRoutes(data);
+    }).catch(function(e){
+      $id("subtitle").textContent = "无法连接 Thalamus";
+      toast("无法连接服务","error");
+    });
   }
-  if(!cur || isDefault){document.getElementById('rm_pattern').value=USAGE_KEYWORDS[u]||''}
-}
-function testRouteMatch(){
-  var pat=document.getElementById('rm_pattern').value.trim(), txt=document.getElementById('rm_testInput').value.trim(), res=document.getElementById('rm_testResult')
-  if(!pat||!txt){res.style.display='none'; return}
-  try{
-    var parts=pat.split(',').map(function(p){return p.trim()}).filter(Boolean)
-    var matched=parts.filter(function(p){try{return new RegExp(p).test(txt)}catch(e){return false}})
-    res.style.display='block'
-    if(matched.length){res.className='match-result yes'; res.innerHTML='✅ 命中: '+matched.join(', ')}
-    else{res.className='match-result no'; res.innerHTML='❌ 未命中任何关键词'}
-  }catch(e){res.style.display='none'}
-}
 
-// ═══ KEYS ═══
-function renderKeys(){
-  var ck=(cfg&&cfg.custom_keys)||{}, ek=(cfg&&cfg.env_keys)||{}, kb=document.getElementById('keysBody'), ke=document.getElementById('keysEmpty'), eb=document.getElementById('envKeysBody'), ee=document.getElementById('envKeysEmpty')
-  var names=Object.keys(ck)
-  if(!names.length){kb.innerHTML=''; ke.style.display='block'}else{ke.style.display='none'}
-  var h=''
-  for(var i=0;i<names.length;i++){
-    var k=names[i],v=ck[k]
-    h+='<div class="key-row"><div class="k-main"><div class="k-name">'+esc(k)+'</div><div class="k-ep">'+esc(rn(v.endpoint||'',60))+'</div><div class="k-val">'+maskKey(v.key)+'</div></div>'
-    h+='<div class="k-actions"><button onclick="syncKeyToProbe(\''+esc(k)+'\')">🔍</button><button onclick="openKeyEditModal(\''+esc(k)+'\')">编辑</button><button class="del" onclick="deleteKeyClick(\''+esc(k)+'\')">删除</button></div></div>'
+  // 探测模型：用 endpoint+key 拉取可用模型列表
+  function probeModels(){
+    var endpoint = $id("f_endpoint").value.trim();
+    var key = $id("f_key").value.trim();
+    if(!endpoint){ toast("请先填写 API 端点","error"); $id("f_endpoint").focus(); return; }
+    if(!key){ toast("请先填写 API Key","error"); $id("f_key").focus(); return; }
+    var box = $id("probeResult");
+    box.classList.remove("hidden");
+    box.innerHTML = '<div class="probe-bar"><span>探测中…</span></div>';
+    $id("probeBtn").textContent = "探测中…";
+    api("/admin/api/models/probe","POST",{endpoint:endpoint,key:key}).then(function(data){
+      $id("probeBtn").textContent = "探测可用模型";
+      if(data.status!=="ok"){ box.innerHTML = '<p class="hint" style="color:var(--red)">'+esc(data.error||"探测失败")+'</p>'; return; }
+      if(!data.models || !data.models.length){
+        box.innerHTML = '<p class="hint">未探测到模型（'+(data.count||0)+'）</p>'; return;
+      }
+      var h = '<div class="probe-bar"><span>共 '+data.count+' 个模型</span><span class="pi-count">点选自动填入</span></div>';
+      h += '<div class="probe-list">';
+      data.models.forEach(function(m){
+        h += '<button type="button" class="probe-item" data-mid="'+esc(m.id)+'">';
+        h += '<span class="pi-id">'+esc(m.id)+'</span>';
+        h += m.owned_by ? '<span class="pi-owner">'+esc(m.owned_by)+'</span>' : '';
+        h += '</button>';
+      });
+      h += '</div>';
+      box.innerHTML = h;
+      // 绑定点击选中
+      box.querySelectorAll(".probe-item").forEach(function(el){
+        el.addEventListener("click", function(){
+          $id("f_model").value = el.getAttribute("data-mid");
+          $id("f_model").focus();
+          toast("已填入模型 ID","ok");
+          box.classList.add("hidden");
+          box.innerHTML = "";
+        });
+      });
+    }).catch(function(){ $id("probeBtn").textContent = "探测可用模型"; box.innerHTML = '<p class="hint" style="color:var(--red)">请求失败</p>'; });
   }
-  kb.innerHTML=h
-  var enames=Object.keys(ek)
-  if(!enames.length){eb.innerHTML=''; ee.style.display='block'}else{ee.style.display='none'}
-  var eh=''
-  for(var i=0;i<enames.length;i++){
-    var k=enames[i],v=ek[k]
-    eh+='<div class="key-row"><div class="k-main"><div class="k-name">'+esc(k)+' <span class="k-badge env">env</span></div><div class="k-ep">'+(v.env_var?'<span style="color:var(--text-2)">'+esc(v.env_var)+'</span>':'')+'</div><div class="k-val">'+esc(v.prefix||'')+'</div></div></div>'
+
+  function addModel(){
+    var payload = {
+      label: $id("f_label").value.trim(),
+      model: $id("f_model").value.trim(),
+      endpoint: $id("f_endpoint").value.trim(),
+      provider: $id("f_provider").value.trim(),
+      key: $id("f_key").value.trim(),
+      usage: $id("f_usage").value.trim(),
+      pattern: $id("f_pattern").value.trim()
+    };
+    if(!payload.label || !payload.model || !payload.endpoint){
+      toast("请填写 label、模型 ID、端点","error");
+      return;
+    }
+    api("/admin/api/routes/add","POST",payload).then(function(data){
+      if(data.status==="ok"){
+        toast("模型已添加","ok");
+        $id("f_key").value="";
+        $id("f_pattern").value="";
+        loadAll();
+      } else {
+        toast(data.error||"添加失败","error");
+      }
+    }).catch(function(){ toast("请求失败","error"); });
   }
-  eb.innerHTML=eh
-}
-function maskKey(s){if(!s)return''; if(s.length<12)return s.slice(0,2)+'***'+s.slice(-2); return s.slice(0,4)+'•••'+s.slice(-4)}
-function openKeyAddModal(){
-  keyEditName=null; document.getElementById('keyModalTitle').textContent='添加自定义密钥'
-  document.getElementById('km_name').value=''; document.getElementById('km_val').value=''; document.getElementById('km_ep').value=''; document.getElementById('km_deleteBtn').style.display='none'
-  document.getElementById('keyCascadeWarn').style.display='none'; document.getElementById('km_probeResult').style.display='none'; document.getElementById('keyModal').classList.add('show')
-}
-function openKeyEditModal(name){
-  keyEditName=name; document.getElementById('keyModalTitle').textContent='编辑密钥 · '+esc(name)
-  var v=cfg.custom_keys[name]
-  document.getElementById('km_name').value=name; document.getElementById('km_name').setAttribute('readonly',true)
-  document.getElementById('km_val').value=v?v.key:''; document.getElementById('km_ep').value=v?v.endpoint:''
-  document.getElementById('km_deleteBtn').style.display='inline-block'; document.getElementById('keyCascadeWarn').style.display='none'; document.getElementById('km_probeResult').style.display='none'
-  document.getElementById('keyModal').classList.add('show')
-}
-function saveKey(){
-  var name=document.getElementById('km_name').value.trim(), key=document.getElementById('km_val').value.trim(), ep=document.getElementById('km_ep').value.trim()
-  if(!name){toast('请输入别名',true);return} if(!key){toast('请输入密钥',true);return} if(!ep){toast('请输入端点URL',true);return}
-  api('POST','/admin/api/keys/add',{name:name,key:key,endpoint:ep}).then(function(){toast('密钥已保存'); closeModal('keyModal'); document.getElementById('km_name').removeAttribute('readonly'); fetchAll()}).catch(function(e){toast(e.message,true)})
-}
-function deleteKeyClick(name){
-  pendingDeleteKey=name
-  api('POST','/admin/api/keys/delete',{name:name}).then(function(d){
-    document.getElementById('delKeyMsg').innerHTML='确认删除密钥 <strong>'+esc(name)+'</strong>？'
-    var listEl=document.getElementById('delKeyAffectedList'),warnEl=document.getElementById('delKeyAffected')
-    listEl.innerHTML=''; var affected=d.affected||[]
-    if(affected.length){
-      warnEl.style.display='block'
-      affected.forEach(function(a){var li=document.createElement('li'); li.textContent=(a.type==='route'?'路由: ':'配置: ')+a.name; listEl.appendChild(li)})
-    }else{warnEl.style.display='none'}
-    document.getElementById('delKeyConfirmModal').classList.add('show')
-  }).catch(function(e){toast(e.message,true)})
-}
-function confirmDeleteKey(){
-  if(!pendingDeleteKey)return
-  api('POST','/admin/api/keys/delete',{name:pendingDeleteKey}).then(function(){toast('密钥已删除'); pendingDeleteKey=null; closeModal('delKeyConfirmModal'); fetchAll()}).catch(function(e){toast(e.message,true)})
-}
-function deleteCurrentKey(){if(!keyEditName)return; closeModal('keyModal'); deleteKeyClick(keyEditName)}
-function syncKeyToProbe(name){openKeyEditModal(name); setTimeout(function(){probeModels('km')},300)}
 
-// ═══ CONFIG ═══
-var cfgSaveTimer = null
+  // 事件绑定
+  $id("loginBtn").addEventListener("click", login);
+  $id("pwd").addEventListener("keydown", function(e){ if(e.key==="Enter") login(); });
+  $id("addBtn").addEventListener("click", addModel);
+  $id("probeBtn").addEventListener("click", probeModels);
+  $id("reloadBtn").addEventListener("click", function(){
+    api("/admin/api/reload","POST",{}).then(function(d){
+      toast(d.status==="ok"?"已重新加载":"重载失败", d.status==="ok"?"ok":"error");
+      loadAll();
+    });
+  });
+  $id("logoutBtn").addEventListener("click", function(){
+    localStorage.removeItem("thal_token");
+    TOKEN=""; showLogin();
+  });
 
-function renderConfig(){
-  if(!cfg) return
-  var d = cfg.default||{}, fb = cfg.fallback||{}, pc = cfg.precheck||{}
-  populateSelect('def_key'); populateSelect('fb_key'); populateSelect('pc_key')
-
-  document.getElementById('def_model').value = d.model||''
-  document.getElementById('def_provider').value = d.provider||''
-  document.getElementById('def_key').value = d.key_env||''
-  document.getElementById('def_ep').value = getKeyEndpoint(d.key_env)
-  var db = document.getElementById('def_probeBtn'); if(db) db.disabled = !d.key_env
-  document.getElementById('def_probeResult').style.display = 'none'
-
-  document.getElementById('fb_model').value = fb.model||''
-  document.getElementById('fb_provider').value = fb.provider||''
-  document.getElementById('fb_key').value = fb.key_env||''
-  document.getElementById('fb_ep').value = getKeyEndpoint(fb.key_env)
-
-  document.getElementById('pc_model').value = pc.model||''
-  document.getElementById('pc_provider').value = pc.provider||''
-  document.getElementById('pc_key').value = pc.key_env||''
-  document.getElementById('pc_ep').value = getKeyEndpoint(pc.key_env)
-  document.getElementById('pc_enabled').checked = pc.enabled !== false
-  var pb = document.getElementById('pc_probeBtn'); if(pb) pb.disabled = !pc.key_env
-
-  updateChain()
-}
-
-function updateChain(){
-  var defM = document.getElementById('def_model').value.trim() || '-'
-  var fbM = document.getElementById('fb_model').value.trim() || '-'
-  var pcM = document.getElementById('pc_model').value.trim() || '-'
-  var pcOn = document.getElementById('pc_enabled').checked
-
-  document.getElementById('def_model_show').textContent = defM
-  document.getElementById('fb_model_show').textContent = fbM
-  document.getElementById('pc_model_show').textContent = pcM
-
-  var pcIcon = document.getElementById('pc_icon')
-  var pcBadge = document.getElementById('pc_badge')
-  if(pcOn){
-    pcIcon.textContent = '🟢'; pcBadge.textContent = '已启用'
-    pcBadge.style.color = 'var(--green)'
+  // 启动：有 token 尝试直接进主界面
+  if(TOKEN){
+    api("/admin/api/routes/list").then(function(data){
+      if(data._status===401){ showLogin(); }
+      else showMain();
+    }).catch(function(){ showLogin(); });
   } else {
-    pcIcon.textContent = '⛔'; pcBadge.textContent = '已关闭'
-    pcBadge.style.color = 'var(--text-2)'
+    showLogin();
   }
-
-  var routes = (cfg && cfg.routes) || []
-  document.getElementById('route_badge').textContent = routes.length + ' 条'
-  document.getElementById('route_names_show').textContent = routes.length
-    ? routes.map(function(r){return r.label||'?'}).join(' · ')
-    : '无路由规则'
-}
-
-function toggleCfgPanel(key){
-  var panel = document.getElementById('cfg-' + key)
-  var card = document.querySelector('.chain-card[onclick*="' + key + '"]')
-  if(!panel) return
-  var isOpen = panel.style.display !== 'none'
-  document.querySelectorAll('.cfg-panel').forEach(function(p){p.style.display = 'none'})
-  document.querySelectorAll('.chain-card').forEach(function(c){c.dataset.open = 'false'})
-  if(!isOpen){
-    panel.style.display = 'block'
-    if(card) card.dataset.open = 'true'
-    panel.scrollIntoView({behavior:'smooth', block:'nearest'})
-  }
-}
-
-function onCfgChange(key){
-  if(cfgSaveTimer) clearTimeout(cfgSaveTimer)
-  cfgSaveTimer = setTimeout(function(){
-    saveConfigFull()
-    updateChain()
-  }, 600)
-}
-
-// ═══ LOGS ═══
-function renderLogs(data){
-  if(!data)return
-  allLogs=data.lines||[]; document.getElementById('logMeta').textContent='共 '+(data.total||0)+' 条，显示 '+allLogs.length+' 条'
-  applyLogFilter()
-}
-function applyLogFilter(){
-  var h='',count=0
-  for(var i=0;i<allLogs.length;i++){
-    var line=allLogs[i],cls=''
-    if(line.indexOf('ERROR')>=0)cls='err'
-    else if(line.indexOf('FALLBACK')>=0)cls='fbk'
-    else if(line.indexOf('ROUTE')>=0)cls='route'
-    else if(line.indexOf('CALL')>=0||line.indexOf('STREAM')>=0)cls='ok'
-    if(logFilter==='error'&&cls!=='err')continue
-    if(logFilter==='fallback'&&cls!=='fbk')continue
-    if(logFilter==='route'&&cls!=='route')continue
-    if(logFilter==='call'&&cls!=='ok')continue
-    h+='<div class="line '+cls+'">'+esc(line)+'</div>'; count++
-  }
-  if(!count)h='<div class="line" style="color:var(--text-2);text-align:center;padding:30px">无匹配日志</div>'
-  document.getElementById('logsBody').innerHTML=h
-}
+})();
 </script>
 </body>
 </html>

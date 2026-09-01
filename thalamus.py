@@ -45,10 +45,35 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 from semantic_router import classify_semantic
+from ai_router import classify_with_ai
 
 # ══════════════════════════════════════════
 # 配置
 # ══════════════════════════════════════════
+
+# Headroom 上下文压缩（可选）
+_HEADROOM_ENABLED = os.environ.get("THALAMUS_HEADROOM_ENABLED", "1") == "1"
+_HEADROOM_MIN_CHARS = int(os.environ.get("THALAMUS_HEADROOM_MIN_CHARS", "500"))
+
+def _compress_with_headroom(messages: list, label: str, long_input: bool) -> tuple[list, int]:
+    """使用 Headroom 压缩消息列表，返回 (压缩后的消息, 节省的 token 数)。"""
+    if not _HEADROOM_ENABLED:
+        return messages, 0
+    try:
+        # 只有消息体够大才值得压缩
+        total = sum(len(m.get("content","")) if isinstance(m.get("content"), str) else 0 for m in messages)
+        if total < _HEADROOM_MIN_CHARS:
+            return messages, 0
+        from headroom import compress
+        result = compress(messages, model="gpt-4o")
+        saved = getattr(result, "tokens_saved", 0)
+        if saved > 0:
+            log(f"HEADROOM: {label} | compressed {total}c → ~{total - saved}c | saved {saved} tok")
+            _spend["headroom_tokens_saved"] = _spend.get("headroom_tokens_saved", 0) + saved
+        return result.messages, saved
+    except Exception as e:
+        log(f"HEADROOM: compression skipped for {label} ({e})")
+        return messages, 0
 
 LOG_PATH = Path(os.environ.get("THALAMUS_LOG", "/root/.hermes/logs/thalamus.log"))
 ROUTES_PATH = Path(os.environ.get("THALAMUS_ROUTES", "/root/thalamus/routes.json"))
@@ -64,6 +89,7 @@ def _load_routes():
     global FALLBACK_MODEL, FALLBACK_PROVIDER, FALLBACK_ENDPOINT, FALLBACK_KEY_ENV
     global PRECHECK_ENABLED, PRECHECK_MODEL, PRECHECK_PROVIDER, PRECHECK_ENDPOINT, PRECHECK_KEY_ENV
     global PRECHECK_MAX_TOKENS, PRECHECK_TEMPERATURE
+    global AI_ROUTING
 
     try:
         with open(ROUTES_PATH) as f:
@@ -120,6 +146,7 @@ def _load_routes():
         PRECHECK_FAST_ENDPOINT = pc.get("fast_endpoint", PRECHECK_ENDPOINT)
         PRECHECK_FAST_KEY_ENV = pc.get("fast_key_env", PRECHECK_KEY_ENV)
 
+        AI_ROUTING = cfg.get("ai_routing", {}) or {}
         log(f"Loaded {len(ROUTES)} routes from {ROUTES_PATH}")
     except Exception as e:
         log(f"WARNING: failed to load {ROUTES_PATH}: {e}")
@@ -127,6 +154,7 @@ def _load_routes():
 
 # 默认值（_load_routes 之前可用）
 ROUTES = []
+AI_ROUTING = {}  # ai_routing config from routes.json; empty = AI routing disabled
 DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_ENDPOINT = "https://api.deepseek.com/v1/chat/completions"
@@ -314,7 +342,7 @@ def _get_admin_password() -> str:
 
 START_TIME = time.time()
 _spend_lock = threading.Lock()
-_spend = {"total": 0.0, "by_provider": {}, "calls": 0, "fallbacks": 0, "errors": 0, "total_tokens": 0, "token_by_provider": {}, "token_by_label": {}}
+_spend = {"total": 0.0, "by_provider": {}, "calls": 0, "fallbacks": 0, "errors": 0, "total_tokens": 0, "token_by_provider": {}, "token_by_label": {}, "headroom_tokens_saved": 0}
 # 任务6: 成本性能日志，记录每次调用的延迟和预估成本，不做路由选择（现有 routes.json 一个 label 只有一个候选）
 _COST_PERF_LOG = []  # [{label, provider, model, latency, input_tok, output_tok, est_cost, ts}]
 _COST_PERF_LOG_LOCK = threading.Lock()
@@ -713,6 +741,21 @@ def classify(messages: list) -> tuple | None:
             return (endpoint, model, key_env, provider, label, proxy, fallbacks)
 
     # ── 第2步：语义兜底（仅正则没匹配时）──
+    # ── 第2步：AI 语义路由（regex 未命中时用 LLM 判断）──
+    try:
+        ai_label, ai_conf = classify_with_ai(text, AI_ROUTING)
+        if ai_label is not None:
+            for _p, _m, _pr, _e, _k, _l, _px, _fb in ROUTES:
+                if _l == ai_label:
+                    log(f"ROUTE: ai → {ai_label} (conf={ai_conf:.2f})")
+                    return (_e, _m, _k, _pr, _l, _px, _fb)
+            log(f"ROUTE: ai → {ai_label} (label not in routes — using default)")
+        elif AI_ROUTING.get("enabled"):
+            log("ROUTE: ai → general (using default)")
+    except Exception as _e:
+        log(f"WARNING: ai_router failed: {_e}")
+
+    # ── 第3步：TF-IDF 语义兜底 ──
     semantic_result = classify_semantic(text)
     if semantic_result is not None:
         sem_label, sem_conf = semantic_result
@@ -1179,6 +1222,11 @@ def process(body: dict) -> tuple[str, bool, dict]:
         label = "DeepSeek (default)"
         proxy = False
 
+    # 任务X: Headroom 上下文压缩（在路由后、熔断前压缩 messages）
+    compressed_messages, tok_saved = _compress_with_headroom(messages, label, long_input)
+    # 将压缩后的消息写回 body，确保 fallback 也使用压缩版本
+    body["messages"] = compressed_messages
+
     # 任务5: 路由熔断检查 — 在发起请求之前拦截
     if route and _circuit_is_tripped(label):
         log(f"CIRCUIT: {label} is OPEN, trying fallbacks before default")
@@ -1195,9 +1243,13 @@ def process(body: dict) -> tuple[str, bool, dict]:
         log(f"ERROR: API key not set: {key_env}")
         raise RuntimeError(f"API key not set: {key_env}")
 
+    # 任务X: Headroom 上下文压缩（在转发前压缩 messages）
+    compressed_messages, tok_saved = _compress_with_headroom(messages, label, long_input)
+
     # 构建转发请求体
     fwd_body = dict(body)
     fwd_body["model"] = model
+    fwd_body["messages"] = compressed_messages  # 使用压缩后的消息
     # 确保 stream 参数传给后端
     fwd_body["stream"] = is_stream
 
@@ -1792,7 +1844,7 @@ def _record_error(provider: str, label: str, error: str, latency: float):
 
 class ThalamusHandler(BaseHTTPRequestHandler):
 
-    MAX_BODY_SIZE = 10 * 1024 * 1024  # 10MB
+    MAX_BODY_SIZE = 20 * 1024 * 1024  # 20MB (was 10MB, too restrictive for large contexts)
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0))
@@ -1861,6 +1913,7 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                 "precheck_cache_misses": _PRECHECK_CACHE_MISSES,
                 "circuit_breaker_skips": _spend.get("circuit_breaker_skips", 0),
                 "circuit_breaker_triggered": _CIRCUIT_BREAKER_TRIGGERED,
+                "headroom_tokens_saved": _spend.get("headroom_tokens_saved", 0),
                 "circuit_breaker_open_routes": [
                     {"label": k, "fail_count": v["fail_count"]}
                     for k, v in _CIRCUIT_BREAKER.items() if v.get("is_open")
@@ -2756,6 +2809,19 @@ class ThalamusHandler(BaseHTTPRequestHandler):
                         "provider": pc.get("provider", current_pc.get("provider", cfg["default"]["provider"])),
                         "endpoint": pc.get("endpoint", current_pc.get("endpoint", cfg["default"]["endpoint"])),
                         "key_env": pc.get("key_env", current_pc.get("key_env", cfg["default"]["key_env"])),
+                    }
+                if "ai_routing" in body:
+                    ar = body["ai_routing"]
+                    current_ar = cfg.get("ai_routing", {})
+                    cfg["ai_routing"] = {
+                        "enabled": bool(ar.get("enabled", current_ar.get("enabled", False))),
+                        "mode": ar.get("mode", current_ar.get("mode", "fallback")),
+                        "model": ar.get("model", current_ar.get("model", "deepseek-chat")),
+                        "provider": ar.get("provider", current_ar.get("provider", "deepseek")),
+                        "key_env": ar.get("key_env", current_ar.get("key_env", "deepseek")),
+                        "endpoint": ar.get("endpoint", current_ar.get("endpoint", "https://api.deepseek.com/v1/chat/completions")),
+                        "timeout": int(ar.get("timeout", current_ar.get("timeout", 10))),
+                        "categories": ar.get("categories", current_ar.get("categories", {})),
                     }
             else:
                 self._send_error(400, f"Unknown action: {action}")
